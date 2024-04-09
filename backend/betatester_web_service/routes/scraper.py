@@ -1,174 +1,41 @@
 import asyncio
-import base64
-from abc import abstractmethod
+import logging
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional, Union
+from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, model_serializer
+from betatester.betatester_types import (
+    Action,
+    ExecutorMessage,
+    ModelChat,
+    ScrapeFiles,
+    ScrapeVariables,
+)
+from cachetools import TTLCache
+from fastapi import APIRouter, Response
+from pydantic import BaseModel, Field
+from sse_starlette.sse import EventSourceResponse
 
-message_queues: dict[UUID, asyncio.Queue["ExecutorMessage"]] = {}
+from betatester import ScrapeExecutor
+from betatester_web_service.file import file_client
+from betatester_web_service.task_manager import task_manager
+from betatester_web_service.utils import model_client, settings
 
+logger = logging.getLogger(__name__)
 
-class ToolChoiceFunction(BaseModel):
-    name: str
-
-
-class ToolChoiceObject(BaseModel):
-    type: str = "function"
-    function: ToolChoiceFunction
-
-
-ToolChoice = Optional[Union[Literal["auto"], ToolChoiceObject]]
-
-
-class ModelType(str, Enum):
-    gpt4vision = "gpt-4-vision-preview"
-    gpt4turbo = "gpt-4-turbo-preview"
-
-
-class ModelChatType(str, Enum):
-    system = "system"
-    user = "user"
-    assistant = "assistant"
+message_queues: dict[UUID, asyncio.Queue[ExecutorMessage]] = {}
+scraper_info_cache: TTLCache[UUID, "RunMessage"] = TTLCache(
+    maxsize=100, ttl=3600
+)
+scraper_info_cache_lock = asyncio.Lock()
 
 
-class ModelChatContentImageDetail(str, Enum):
-    low = "low"
-    auto = "auto"
-    high = "high"
-
-
-class ModelChatContentImage(BaseModel):
-    url: str
-    detail: ModelChatContentImageDetail
-
-    @classmethod
-    def from_b64(
-        cls,
-        b64_image: str,
-        detail: ModelChatContentImageDetail = ModelChatContentImageDetail.auto,
-    ) -> "ModelChatContentImage":
-        return cls(url=f"data:image/png;base64,{b64_image}", detail=detail)
-
-
-class ModelChatContentType(str, Enum):
-    text = "text"
-    image_url = "image_url"
-
-
-class ModelChatContent(BaseModel):
-    type: ModelChatContentType
-    content: Union[str, ModelChatContentImage]
-
-    @model_serializer
-    def serialize(self) -> dict[str, Union[str, dict]]:
-        content_key = self.type.value
-        content_value = (
-            self.content
-            if isinstance(self.content, str)
-            else self.content.model_dump()
-        )
-        return {"type": self.type.value, content_key: content_value}
-
-
-class ModelChat(BaseModel):
-    role: ModelChatType
-    content: Union[str, list[ModelChatContent]]
-
-    @classmethod
-    def from_b64_image(
-        cls, role: ModelChatType, b64_image: str
-    ) -> "ModelChat":
-        return cls(
-            role=role,
-            content=[
-                ModelChatContent(
-                    type=ModelChatContentType.image_url,
-                    content=ModelChatContentImage.from_b64(b64_image),
-                )
-            ],
-        )
-
-
-class ModelFunction(BaseModel):
-    name: str
-    description: Optional[str]
-    parameters: Optional[dict]
-
-
-class Tool(BaseModel):
-    type: str = "function"
-    function: ModelFunction
-
-
-OpenAiPromptReturnType = tuple[
-    list[ModelChat], list[ModelFunction], ToolChoice
-]
-
-
-class OpenAiChatInput(BaseModel):
-    messages: list[ModelChat]
-    model: ModelType
-    max_tokens: Optional[int] = None
-    n: int = 1
-    temperature: float = 0.0
-    stop: Optional[str] = None
-    tools: Optional[list[Tool]] = None
-    tool_choice: ToolChoice = None
-    stream: bool = False
-    logprobs: bool = False
-    top_logprobs: Optional[int] = None
-
-    @property
-    def data(self) -> dict:
-        exclusion = set()
-        if self.tools is None:
-            exclusion.add("tools")
-        if self.tool_choice is None:
-            exclusion.add("tool_choice")
-
-        return self.model_dump(
-            exclude=exclusion,
-        )
-
-
-class ActionType(str, Enum):
-    click = "click"
-    fill = "fill"
-    select = "select"
-    check = "check"
-    upload_file = "upload_file"
-    none = "none"
-
-
-class ActionElement(BaseModel):
-    role: Optional[str] = None
-    name: Optional[str] = None
-    selector: Optional[str] = None
-
-
-class Action(BaseModel):
-    element: ActionElement
-    action_type: ActionType
-    action_value: Optional[str] = None
-
-
-class FileInfo(BaseModel):
-    name: str
-    b64_content: str = Field(exclude=True)
-    mime_type: str = Field(alias="mimeType")
-
-    @computed_field
-    @property
-    def buffer(self) -> bytes:
-        # file strings are base64 url encoded
-        return base64.b64decode(self.b64_content.split(",", 1)[1])
-
-
-RunVariables = dict[str, str]
-RunFiles = dict[str, FileInfo]
+router = APIRouter(
+    prefix="/scraper",
+    tags=["scraper"],
+    responses={404: {"description": "Not found"}},
+)
 
 
 class RunRequest(BaseModel):
@@ -179,35 +46,8 @@ class RunRequest(BaseModel):
     max_action_attempts_per_step: int = 5
     viewport_width: int = 1280
     viewport_height: int = 720
-    variables: RunVariables = Field(default_factory=dict)
-    files: RunFiles = Field(default_factory=dict)
-
-
-class HtmlType(str, Enum):
-    full = "full"
-    clean = "clean"
-
-
-class FileClient:
-    @abstractmethod
-    async def save_img(
-        self, scrape_id: UUID, step_id: UUID, img: bytes
-    ) -> None:
-        raise NotImplementedError()
-
-    @abstractmethod
-    async def save_html(
-        self, scrape_id: UUID, step_id: UUID, html: str, html_type: HtmlType
-    ) -> None:
-        raise NotImplementedError()
-
-    @abstractmethod
-    async def save_trace(self, tmp_trace_path: str) -> None:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def img_path(self, scrape_id: UUID, step_id: UUID) -> str:
-        raise NotImplementedError()
+    variables: ScrapeVariables = Field(default_factory=dict)
+    files: ScrapeFiles = Field(default_factory=dict)
 
 
 class ScrapeStatus(str, Enum):
@@ -372,12 +212,94 @@ class RunMessage(RunEventMetadata):
         )
 
 
-class ExecutorMessage(BaseModel):
-    step_id: Optional[UUID] = None
-    scrape_page_view_count: Optional[int] = None
-    scrape_action_count: Optional[int] = None
-    next_step: Optional[str] = None
-    action: Optional[Action] = None
-    step_action_count: Optional[int] = None
-    next_step_chat: Optional[list[ModelChat]] = None
-    choose_action_chat: Optional[list[ModelChat]] = None
+async def _run_scraper(scraper: ScrapeExecutor):
+    async with scraper_info_cache_lock:
+        scraper_info_cache[scraper.scrape_id] = RunMessage(
+            id=scraper.scrape_id,
+            url=scraper.url,
+            high_level_goal=scraper.high_level_goal,
+            status=ScrapeStatus.running,
+            max_page_views=scraper.max_page_views,
+            max_total_actions=scraper.max_total_actions,
+            steps=[],
+        )
+
+    if scraper.scrape_id not in message_queues:
+        message_queues[scraper.scrape_id] = asyncio.Queue()
+
+    # subscribe to scraper
+    scraper.subscriptions = set([message_queues[scraper.scrape_id]])
+
+    try:
+        await scraper.run()
+        scraper_info_cache[scraper.scrape_id].complete()
+    except Exception as e:
+        scraper_info_cache[scraper.scrape_id].fail(str(e))
+
+
+@router.post("/run")
+async def run_scraper(request: RunRequest):
+    scraper = ScrapeExecutor(
+        url=request.url,
+        high_level_goal=request.high_level_goal,
+        openai_api_key=settings.openai_api_key,
+        max_page_views=request.max_page_views,
+        max_total_actions=request.max_total_actions,
+        max_action_attempts_per_step=request.max_action_attempts_per_step,
+        viewport_width=request.viewport_width,
+        viewport_height=request.viewport_height,
+        variables=request.variables,
+        files=request.files,
+        file_client=file_client,
+        save_playwright_trace=True,
+        model_client=model_client,
+    )
+
+    task_manager.add_task(
+        str(scraper.scrape_id),
+        _run_scraper,
+        scraper,
+    )
+
+    return {"scrape_id": scraper.scrape_id}
+
+
+@router.post("/stop/{scrape_id}", status_code=204)
+async def processing_stop(scrape_id: UUID):
+    task_manager.cancel_task(str(scrape_id))
+    async with scraper_info_cache_lock:
+        if scrape_id in scraper_info_cache:
+            scraper_info_cache[scrape_id].stop()
+    return Response(status_code=204)
+
+
+@router.get("/status-ui/{scrape_id}", include_in_schema=False)
+async def run_status_ui(
+    scrape_id: UUID,
+):
+    async def event_generator():
+        while True:
+            if scrape_id in message_queues:
+                message = await message_queues[scrape_id].get()
+                async with scraper_info_cache_lock:
+                    content = message
+                    scraper_info_cache[scrape_id].update_metadata(
+                        action_count=content.scrape_action_count,
+                        page_views=content.scrape_page_view_count,
+                    )
+                    if content.step_id is not None:
+                        scraper_info_cache[scrape_id].add_step(
+                            step_id=content.step_id,
+                            next_step=content.next_step,
+                            action=content.action,
+                            action_count=content.step_action_count,
+                            debug_choose_action_chat=content.choose_action_chat,
+                            debug_next_step_chat=content.next_step_chat,
+                        )
+
+                yield {"data": scraper_info_cache[scrape_id].model_dump_json()}
+            else:
+                # wait before checking agian if queue has been created
+                await asyncio.sleep(15)
+
+    return EventSourceResponse(event_generator())

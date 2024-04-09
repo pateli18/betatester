@@ -1,7 +1,10 @@
 import logging.config
 from enum import Enum
 
+import httpx
 from pydantic_settings import BaseSettings
+
+model_client = httpx.AsyncClient()
 
 
 class FileProviderType(str, Enum):

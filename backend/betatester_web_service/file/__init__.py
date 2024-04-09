@@ -1,9 +1,9 @@
 import json
 
-from betatester.utils import FileProviderType, settings
+from betatester_web_service.utils import FileProviderType, settings
 
 if settings.file_provider == FileProviderType.local:
-    from .local import LocalFileClient
+    from betatester.file.local import LocalFileClient
 
     save_path = json.loads(settings.file_provider_config)["save_path"]
     file_client = LocalFileClient(save_path)

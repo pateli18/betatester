@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-from betatester.file import file_client
+from betatester_web_service.file import file_client
 
 logger = logging.getLogger(__name__)
 

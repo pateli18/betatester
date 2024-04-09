@@ -5,7 +5,7 @@
     "--force-grid-wrap=0",
     "--use-parentheses",
     "--line-width=79",
-    "--project=betatester"
+    "--project=betatester_web_service"
   ],
   "flake8.args": ["--max-line-length=79", "--ignore=E203,W503,E501"],
   "editor.formatOnSave": true,

@@ -3,7 +3,7 @@ from uuid import UUID
 
 import aiofiles
 
-from betatester.betatester_types import FileClient, HtmlType
+from ..betatester_types import FileClient, HtmlType
 
 
 class LocalFileClient(FileClient):

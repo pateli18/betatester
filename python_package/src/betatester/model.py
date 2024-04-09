@@ -4,12 +4,11 @@ from typing import AsyncGenerator
 
 import httpx
 
-from betatester.betatester_types import OpenAiChatInput
+from .betatester_types import OpenAiChatInput
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT = 30
-model_client = httpx.AsyncClient()
 
 
 async def send_openai_request(

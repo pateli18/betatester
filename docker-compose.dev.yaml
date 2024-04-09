@@ -4,17 +4,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: dev
+      target: backend-dev
     command:
       - python
       - -m
       - uvicorn
-      - betatester.server:app
+      - betatester_web_service.server:app
       - --host
       - "0.0.0.0"
       - --port
       - "8080"
       - --reload
+      - --reload-include
+      - "../python_package/*"
     environment:
       ENVIRONMENT: dev
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -23,6 +25,7 @@ services:
     volumes:
       - ./backend:/app
       - ./app-data:/app-data
+      - ./python_package:/python_package
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always

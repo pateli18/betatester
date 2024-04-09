@@ -1,4 +1,4 @@
-FROM python:3.11 as dev
+FROM python:3.11 as backend-base
 
 RUN pip install --upgrade pip
 WORKDIR /app
@@ -6,14 +6,29 @@ WORKDIR /app
 RUN pip install playwright
 RUN playwright install --with-deps chromium
 
-COPY backend/requirements* /app/
+COPY backend/requirements.txt /app/
 
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt -t /usr/local/lib/python3.11/site-packages
 
-COPY backend/betatester /app/betatester
+FROM backend-base as backend-dev
+
+RUN pip install watchfiles
+
+COPY python_package /python_package
+
+RUN pip install -e /python_package/ -t /usr/local/lib/python3.11/site-packages
+
+COPY backend/betatester_web_service /app/betatester_web_service
+
+FROM backend-base as backend-prod
+
+RUN pip install betatester
+
+COPY backend/betatester_web_service /app/betatester_web_service
 
 EXPOSE 8080
-CMD ["uvicorn", "betatester.server:app", "--host", "0.0.0.0"]
+
+CMD ["uvicorn", "betatester_web_service.server:app", "--host", "0.0.0.0"]
 
 FROM node:20.11.1-alpine3.18 as frontend
 
@@ -30,6 +45,6 @@ ADD frontend/ /usr/src/app/
 # Build
 RUN npm run build
 
-FROM dev as prod
+FROM backend-prod as prod
 
-COPY --from=frontend /usr/src/app/dist /app/betatester/ui/
+COPY --from=frontend /usr/src/app/dist /app/betatester_web_service/ui/

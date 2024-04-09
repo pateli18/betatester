@@ -5,9 +5,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from betatester.model import model_client
-from betatester.routes import data, scraper
-from betatester.utils import Environment, settings, setup_logging
+from betatester_web_service.routes import data, scraper
+from betatester_web_service.utils import (
+    Environment,
+    model_client,
+    settings,
+    setup_logging,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)

@@ -1,10 +1,10 @@
-from betatester.betatester_types import (
+from .betatester_types import (
     ActionType,
     ModelChat,
     ModelChatType,
     ModelFunction,
-    RunFiles,
-    RunVariables,
+    ScrapeFiles,
+    ScrapeVariables,
     Tool,
     ToolChoiceFunction,
     ToolChoiceObject,
@@ -50,8 +50,8 @@ HTML:
 
 
 def create_choose_action_system_prompt(
-    variables: RunVariables,
-    files: RunFiles,
+    variables: ScrapeVariables,
+    files: ScrapeFiles,
 ) -> ModelChat:
     variable_keys = (
         "\n".join([f"- {key}" for key in variables.keys()])
