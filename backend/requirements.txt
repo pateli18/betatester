@@ -1,0 +1,9 @@
+aiofiles
+cachetools
+beautifulsoup4
+fastapi
+httpx
+lxml
+pydantic-settings
+sse-starlette
+uvicorn
