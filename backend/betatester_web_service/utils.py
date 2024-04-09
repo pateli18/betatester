@@ -18,11 +18,18 @@ class Environment(str, Enum):
 
 class Settings(BaseSettings):
     openai_api_key: str
+    postgres_uri: str
     file_provider: FileProviderType = FileProviderType.local
     file_provider_config: str = '{"save_path": "/app-data/"}'
     base_url: str = "http://localhost:8080"
     environment: Environment = Environment.dev
     log_level: str = "INFO"
+
+    @property
+    def postgres_connection_string(self) -> str:
+        return self.postgres_uri.replace(
+            "postgres://", "postgresql+asyncpg://"
+        )
 
 
 settings = Settings()  # type: ignore

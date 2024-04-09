@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: betatester
+      POSTGRES_DB: betatester
+      POSTGRES_PASSWORD: betatester
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U betatester"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
   app:
     image: betatester-dev:latest
     build:
@@ -20,12 +36,16 @@ services:
     environment:
       ENVIRONMENT: dev
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      POSTGRES_URI: postgresql+asyncpg://betatester:betatester@postgres:5432/betatester
     ports:
       - "8080:8080"
     volumes:
       - ./backend:/app
       - ./app-data:/app-data
       - ./python_package:/python_package
+    depends_on:
+      postgres:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: always

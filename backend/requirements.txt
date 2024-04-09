@@ -1,5 +1,7 @@
+asyncpg
 cachetools
 fastapi
 pydantic-settings
+sqlalchemy[asyncio]
 sse-starlette
 uvicorn

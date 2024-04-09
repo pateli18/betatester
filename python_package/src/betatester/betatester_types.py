@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Literal, Optional, Union
 from uuid import UUID
 
-from pydantic import BaseModel, Field, computed_field, model_serializer
+from pydantic import BaseModel, model_serializer
 
 
 class ModelChatType(str, Enum):
@@ -127,14 +127,21 @@ class OpenAiChatInput(BaseModel):
 
 class FileInfo(BaseModel):
     name: str
-    b64_content: str = Field(exclude=True)
-    mime_type: str = Field(alias="mimeType")
+    b64_content: str
+    mime_type: str
 
-    @computed_field
     @property
     def buffer(self) -> bytes:
         # file strings are base64 url encoded
         return base64.b64decode(self.b64_content.split(",", 1)[1])
+
+    @property
+    def input_files(self) -> dict[str, Union[str, bytes]]:
+        return {
+            "name": self.name,
+            "buffer": self.buffer,
+            "mimeType": self.mime_type,
+        }
 
 
 ScrapeVariables = dict[str, str]

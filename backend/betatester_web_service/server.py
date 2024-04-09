@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from betatester_web_service.routes import data, scraper
+from betatester_web_service.db.base import create_tables, shutdown_session
+from betatester_web_service.routes import config, data, scraper
 from betatester_web_service.utils import (
     Environment,
     model_client,
@@ -20,13 +21,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await create_tables()
     yield
+    await shutdown_session()
     await model_client.aclose()
 
 
 app = FastAPI(lifespan=lifespan, title="Betateser", version="0.0.0")
 app.include_router(scraper.router, prefix="/api/v1")
+app.include_router(config.router, prefix="/api/v1")
 app.include_router(data.router)
+
 
 origins = [
     "https://trace.playwright.dev",

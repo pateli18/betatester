@@ -50,6 +50,7 @@ export interface RunStep {
 
 export interface RunEventMetadata {
   id: string;
+  config_id: string;
   url: string;
   high_level_goal: string;
   status: ScrapeStatus;
@@ -70,5 +71,26 @@ export interface RunMessage extends RunEventMetadata {
 export interface FileInfo {
   name: string;
   b64_content: string;
-  mimeType: string;
+  mime_type: string;
+}
+
+export interface Config {
+  config_id: string;
+  url: string;
+  name: string;
+  high_level_goal: string;
+  max_page_views: number;
+  max_total_actions: number;
+  max_action_attempts_per_step: number;
+  viewport_width: number;
+  viewport_height: number;
+  variables: Record<string, string>;
+  files: Record<string, FileInfo>;
+}
+
+export interface ConfigMetadata {
+  config_id: string;
+  name: string;
+  url: string;
+  last_updated: string;
 }

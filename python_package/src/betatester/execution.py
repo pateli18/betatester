@@ -283,7 +283,7 @@ class ScrapeStepExecutor(ExecutorBase):
                     f"Action value {action.action_value} not found in files"
                 )
 
-            await element.set_input_files(file.model_dump(by_alias=True))  # type: ignore
+            await element.set_input_files(file.input_files)  # type: ignore
         elif action.action_type == ActionType.none:
             pass
         else:

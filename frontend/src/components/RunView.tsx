@@ -1,18 +1,16 @@
 import { useEffect, useState } from "react";
 import { Action, ModelChat, RunMessage, ScrapeStatus, RunStep } from "../types";
-import { stopRun } from "../utils/apiCalls";
 import {
   AutoScroll,
+  ConfigInfo,
   CounterDisplay,
   CustomMarkdown,
   StatusDisplay,
+  StopButton,
+  TraceLink,
 } from "./DisplayUtils";
 import { Button } from "@/components/ui/button";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  StopIcon,
-} from "@radix-ui/react-icons";
+import { ChevronLeftIcon, ChevronRightIcon } from "@radix-ui/react-icons";
 import { loadAndFormatDate } from "../utils/date";
 import {
   Accordion,
@@ -22,24 +20,7 @@ import {
 } from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
 import { Badge, badgeVariants } from "@/components/ui/badge";
-
-export const TraceLink = (props: { trace_url: string }) => {
-  const handleClick = (
-    event: React.MouseEvent<HTMLAnchorElement, MouseEvent>
-  ) => {
-    event.stopPropagation();
-  };
-  return (
-    <a
-      href={props.trace_url}
-      target="_blank"
-      className={badgeVariants({ variant: "secondary" })}
-      onClick={handleClick}
-    >
-      View Playwright Trace
-    </a>
-  );
-};
+import { useNavigate } from "react-router-dom";
 
 const DebugChatView = (props: { chat: ModelChat[]; title: string }) => {
   return (
@@ -194,6 +175,7 @@ const StepView = (props: {
       )}
       <img
         src={`/data/screenshot/${props.runId}/${props.runStep.step_id}.png`}
+        className="rounded-md shadow-md"
       />
       <div>
         <h3 className="text-lg font-medium">Next Step</h3>
@@ -216,6 +198,7 @@ const StepView = (props: {
 };
 
 export const RunMessageView = (props: { runMessage: RunMessage }) => {
+  const navigator = useNavigate();
   const [stepIndex, setStepIndex] = useState<number>(0);
 
   useEffect(() => {
@@ -228,15 +211,19 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
     }
   }, [props.runMessage.steps.length]);
 
-  const onClickStop = async () => {
-    if (props.runMessage.status === "running") {
-      await stopRun(props.runMessage.id);
-    }
-  };
-
   return (
     <AutoScroll disabled={props.runMessage.status !== "running"}>
       <div className="space-y-5">
+        <Button
+          variant="secondary"
+          onClick={() => navigator(`/?configId=${props.runMessage.config_id}`)}
+        >
+          Back to History
+        </Button>
+        <ConfigInfo
+          url={props.runMessage.url}
+          high_level_goal={props.runMessage.high_level_goal}
+        />
         <div className="space-x-2 flex items-center">
           <div className="text-lg font-medium">{props.runMessage.id}</div>
           {props.runMessage.status !== "running" && (
@@ -246,10 +233,11 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
         <div className="flex items-center space-x-2">
           <StatusDisplay status={props.runMessage.status} />
           {props.runMessage.status === "running" && (
-            <Button variant="destructive" onClick={onClickStop}>
-              <StopIcon className="mr-2 h-4 w-4" />
-              Stop
-            </Button>
+            <StopButton
+              configId={props.runMessage.config_id}
+              scrapeId={props.runMessage.id}
+              reload={false}
+            />
           )}
         </div>
         <div className="space-x-2">

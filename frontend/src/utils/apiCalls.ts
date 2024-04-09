@@ -1,7 +1,9 @@
-import { FileInfo } from "src/types";
+import { Config, ConfigMetadata, FileInfo, RunEventMetadata } from "src/types";
 import Ajax from "./Ajax";
 
-export const startRun = async (
+export const upsertConfig = async (
+  configId: string | null,
+  name: string,
   url: string,
   highLevelGoal: string,
   maxPageViews: number,
@@ -14,11 +16,13 @@ export const startRun = async (
 ) => {
   let response = null;
   try {
-    response = await Ajax.req<{ scrape_id: string }>({
-      url: "/api/v1/scraper/run",
+    response = await Ajax.req<{ config_id: string }>({
+      url: "/api/v1/config/upsert",
       method: "POST",
       body: {
+        config_id: configId,
         url: url,
+        name: name,
         high_level_goal: highLevelGoal,
         max_page_views: maxPageViews,
         max_total_actions: maxTotalActions,
@@ -35,15 +39,58 @@ export const startRun = async (
   return response;
 };
 
-export const stopRun = async (runId: string) => {
+export const startScrape = async (configId: string) => {
+  let response = null;
+  try {
+    response = await Ajax.req<{ scrape_id: string }>({
+      url: `/api/v1/scraper/start/${configId}`,
+      method: "POST",
+      body: {},
+    });
+  } catch (e) {
+    console.error(e);
+  }
+  return response;
+};
+
+export const stopScrape = async (configId: string, scrapeId: string) => {
   let response = false;
   try {
     await Ajax.req({
-      url: `/api/v1/scraper/stop/${runId}`,
+      url: `/api/v1/scraper/stop/${configId}/${scrapeId}`,
       method: "POST",
       body: {},
     });
     response = true;
+  } catch (e) {
+    console.error(e);
+  }
+  return response;
+};
+
+export const getAllConfigs = async () => {
+  let response = null;
+  try {
+    response = await Ajax.req<ConfigMetadata[]>({
+      url: `/api/v1/config/all`,
+      method: "GET",
+    });
+  } catch (e) {
+    console.error(e);
+  }
+  return response;
+};
+
+export const getConfig = async (configId: string) => {
+  let response = null;
+  try {
+    response = await Ajax.req<{
+      config: Config;
+      history: RunEventMetadata[];
+    }>({
+      url: `/api/v1/config/${configId}`,
+      method: "GET",
+    });
   } catch (e) {
     console.error(e);
   }

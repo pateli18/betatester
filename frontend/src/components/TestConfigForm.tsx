@@ -12,8 +12,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import { startRun } from "../utils/apiCalls";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CaretSortIcon, ReloadIcon, TrashIcon } from "@radix-ui/react-icons";
 import {
@@ -21,7 +20,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { FileInfo } from "src/types";
+import { Config, FileInfo } from "src/types";
+import { upsertConfig } from "../utils/apiCalls";
 
 const fileToFileInfo = async (file: File) => {
   return new Promise<FileInfo>((resolve, reject) => {
@@ -32,7 +32,7 @@ const fileToFileInfo = async (file: File) => {
         resolve({
           name: file.name,
           b64_content: reader.result,
-          mimeType: file.type,
+          mime_type: file.type,
         });
       } else {
         reject("Failed to read file");
@@ -46,6 +46,7 @@ const fileToFileInfo = async (file: File) => {
 };
 
 const formSchema = z.object({
+  name: z.string(),
   url: z.string(),
   highLevelGoal: z.string(),
   maxPageViews: z.coerce.number(),
@@ -61,7 +62,7 @@ const formSchema = z.object({
           .object({
             name: z.string(),
             b64_content: z.string(),
-            mimeType: z.string(),
+            mime_type: z.string(),
           })
           .nullable(),
       })
@@ -87,7 +88,10 @@ const FormGroup = (props: { title: string; children: React.ReactNode }) => {
   );
 };
 
-export const RunStartForm = (props: { setRunId: (runId: string) => void }) => {
+export const TestConfigForm = (props: {
+  config: Config | null;
+  successCallback?: (config_id: string) => void;
+}) => {
   const [submitLoading, setSubmitLoading] = useState(false);
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -99,6 +103,33 @@ export const RunStartForm = (props: { setRunId: (runId: string) => void }) => {
       viewportWidth: 1280,
     },
   });
+
+  useEffect(() => {
+    if (props.config !== null) {
+      form.reset({
+        name: props.config.name,
+        url: props.config.url,
+        highLevelGoal: props.config.high_level_goal,
+        maxPageViews: props.config.max_page_views,
+        maxTotalActions: props.config.max_total_actions,
+        maxActionsPerStep: props.config.max_action_attempts_per_step,
+        viewportHeight: props.config.viewport_height,
+        viewportWidth: props.config.viewport_width,
+        files: props.config.files
+          ? Object.entries(props.config.files).map(([key, file]) => ({
+              key,
+              file,
+            }))
+          : [],
+        keyValuePairs: props.config.variables
+          ? Object.entries(props.config.variables).map(([key, value]) => ({
+              key,
+              value,
+            }))
+          : [],
+      });
+    }
+  }, [props.config?.config_id]);
 
   const {
     fields: filesFields,
@@ -120,7 +151,9 @@ export const RunStartForm = (props: { setRunId: (runId: string) => void }) => {
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setSubmitLoading(true);
-    const response = await startRun(
+    const response = await upsertConfig(
+      props.config?.config_id ?? null,
+      data.name,
       data.url,
       data.highLevelGoal,
       data.maxPageViews,
@@ -143,16 +176,36 @@ export const RunStartForm = (props: { setRunId: (runId: string) => void }) => {
     );
     setSubmitLoading(false);
     if (response === null) {
-      toast.error("Failed to start run");
+      toast.error("Failed to save test");
     } else {
-      props.setRunId(response.scrape_id);
-      toast.success("Run started");
+      if (props.config === null) {
+        toast.success("Test created");
+      } else {
+        toast.success("Test updated");
+      }
+      if (props.successCallback) {
+        props.successCallback(response.config_id);
+      }
     }
   };
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <FormField
+          control={form.control}
+          name="name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input type="text" {...field} />
+              </FormControl>
+              <FormDescription>The name of the test</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="url"
@@ -416,7 +469,7 @@ export const RunStartForm = (props: { setRunId: (runId: string) => void }) => {
           </>
         </FormGroup>
         <Button type="submit">
-          Start
+          Save
           {submitLoading && (
             <ReloadIcon className="ml-2 h-4 w-4 animate-spin" />
           )}
