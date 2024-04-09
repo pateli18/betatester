@@ -1,4 +1,3 @@
-aiofiles
 cachetools
 fastapi
 pydantic-settings

@@ -16,13 +16,13 @@ RUN pip install watchfiles
 
 COPY python_package /python_package
 
-RUN pip install -e /python_package/ -t /usr/local/lib/python3.11/site-packages
+RUN pip install -e /python_package/[local] -t /usr/local/lib/python3.11/site-packages
 
 COPY backend/betatester_web_service /app/betatester_web_service
 
 FROM backend-base as backend-prod
 
-RUN pip install betatester
+RUN pip install betatester[local]
 
 COPY backend/betatester_web_service /app/betatester_web_service
 
