@@ -21,7 +21,25 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+import { Badge, badgeVariants } from "@/components/ui/badge";
+
+export const TraceLink = (props: { trace_url: string }) => {
+  const handleClick = (
+    event: React.MouseEvent<HTMLAnchorElement, MouseEvent>
+  ) => {
+    event.stopPropagation();
+  };
+  return (
+    <a
+      href={props.trace_url}
+      target="_blank"
+      className={badgeVariants({ variant: "secondary" })}
+      onClick={handleClick}
+    >
+      View Playwright Trace
+    </a>
+  );
+};
 
 const DebugChatView = (props: { chat: ModelChat[]; title: string }) => {
   return (
@@ -219,7 +237,12 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
   return (
     <AutoScroll disabled={props.runMessage.status !== "running"}>
       <div className="space-y-5">
-        <div className="text-lg font-medium">{props.runMessage.id}</div>
+        <div className="space-x-2 flex items-center">
+          <div className="text-lg font-medium">{props.runMessage.id}</div>
+          {props.runMessage.status !== "running" && (
+            <TraceLink trace_url={props.runMessage.trace_url} />
+          )}
+        </div>
         <div className="flex items-center space-x-2">
           <StatusDisplay status={props.runMessage.status} />
           {props.runMessage.status === "running" && (

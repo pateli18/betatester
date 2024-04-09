@@ -192,9 +192,13 @@ class FileClient:
         raise NotImplementedError()
 
     @abstractmethod
-    async def save_trace(self, tmp_trace_path: str) -> None:
+    async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> None:
         raise NotImplementedError()
 
     @abstractmethod
     def img_path(self, scrape_id: UUID, step_id: UUID) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def trace_path(self, scrape_id: UUID) -> str:
         raise NotImplementedError()

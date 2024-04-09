@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     openai_api_key: str
     file_provider: FileProviderType = FileProviderType.local
     file_provider_config: str = '{"save_path": "/app-data/"}'
+    base_url: str = "http://localhost:8080"
     environment: Environment = Environment.dev
     log_level: str = "INFO"
 

@@ -284,6 +284,8 @@ class ScrapeStepExecutor(ExecutorBase):
                 )
 
             await element.set_input_files(file.model_dump(by_alias=True))  # type: ignore
+        elif action.action_type == ActionType.none:
+            pass
         else:
             raise ActionNotFoundException(
                 f"Action type {action.action_type} not found"
@@ -444,7 +446,9 @@ class ScrapeExecutor(ExecutorBase):
                     output_path = f"{trace_tempdir.name}/{self.scrape_id}.zip"
                     await context.tracing.stop(path=output_path)
                     if self.file_client is not None:
-                        await self.file_client.save_trace(output_path)
+                        await self.file_client.save_trace(
+                            self.scrape_id, output_path
+                        )
                     trace_tempdir.cleanup()
 
                 # cleanup playwright

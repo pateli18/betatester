@@ -44,20 +44,15 @@ class LocalFileClient(FileClient):
 
     def _create_traces_path(
         self,
-        path: str,
+        scrape_id: UUID,
     ) -> str:
-        path = os.path.join(
-            self.save_path,
-            "traces",
-            path,
-        )
+        path = os.path.join(self.save_path, "traces", f"{scrape_id}.zip")
 
         os.makedirs(os.path.dirname(path), exist_ok=True)
         return path
 
-    async def save_trace(self, tmp_trace_path: str) -> None:
-        filename = tmp_trace_path.split("/")[-1]
-        path = self._create_traces_path(filename)
+    async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> None:
+        path = self._create_traces_path(scrape_id)
         async with aiofiles.open(tmp_trace_path, "rb") as f:
             async with aiofiles.open(path, "wb") as f_out:
                 await f_out.write(await f.read())
@@ -78,3 +73,6 @@ class LocalFileClient(FileClient):
 
     def img_path(self, scrape_id: UUID, step_id: UUID) -> str:
         return self._create_imgs_path(scrape_id, step_id)
+
+    def trace_path(self, scrape_id: UUID) -> str:
+        return self._create_traces_path(scrape_id)

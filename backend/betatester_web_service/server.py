@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -26,6 +27,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, title="Betateser", version="0.0.0")
 app.include_router(scraper.router, prefix="/api/v1")
 app.include_router(data.router)
+
+origins = [
+    "https://trace.playwright.dev",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 
 if settings.environment != Environment.dev:

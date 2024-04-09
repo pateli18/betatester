@@ -60,6 +60,7 @@ export interface RunEventMetadata {
   fail_reason: string | null;
   max_page_views: number;
   max_total_actions: number;
+  trace_url: string;
 }
 
 export interface RunMessage extends RunEventMetadata {

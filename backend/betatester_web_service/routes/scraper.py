@@ -14,7 +14,7 @@ from betatester.betatester_types import (
 )
 from cachetools import TTLCache
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from sse_starlette.sse import EventSourceResponse
 
 from betatester import ScrapeExecutor
@@ -85,6 +85,11 @@ class RunEventMetadata(BaseModel):
     max_page_views: Optional[int]
     max_total_actions: Optional[int]
     fail_reason: Optional[str] = None
+
+    @computed_field
+    @property
+    def trace_url(self) -> str:
+        return f"https://trace.playwright.dev/?trace={settings.base_url}/data/trace/{self.id}.zip"
 
 
 class RunMessage(RunEventMetadata):
