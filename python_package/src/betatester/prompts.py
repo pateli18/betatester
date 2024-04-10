@@ -20,10 +20,10 @@ def create_next_step_system_prompt(
 - You are given a HIGH_LEVEL_GOAL to accomplish on a website and a screenshot of the website
 
 ### RULES
-- You should suggest the next step to accomplish the high level goal (e.g. click a specific button, fill a specific form, etc.)
-- Only suggest one step at a time
+- You should provide the next step to accomplish the high level goal (e.g. click a specific button, fill a specific form, etc.)
+- Only provide one step at a time
 - If the page has not been loaded, return WAIT
-- If the high level goal has been accomplished, return DONE
+- If the HIGH_LEVEL_GOAL has been accomplished, return DONE
 
 HIGH_LEVEL_GOAL: {high_level_goal}
 """
