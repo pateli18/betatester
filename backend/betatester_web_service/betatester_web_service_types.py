@@ -84,6 +84,37 @@ class RunStep(BaseModel):
     )
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
+    @staticmethod
+    def _process_debug_chat(
+        chat: Optional[list[dict]],
+    ) -> Optional[list[ModelChat]]:
+        if chat is None:
+            return None
+        else:
+            return [ModelChat.from_serialized(msg) for msg in chat]
+
+    @classmethod
+    def from_serialized(cls, serialized: dict) -> "RunStep":
+        return cls(
+            step_id=serialized["step_id"],
+            next_step=serialized["next_step"],
+            action=(
+                Action(**serialized["action"])
+                if serialized["action"] is not None
+                else None
+            ),
+            action_count=serialized["action_count"],
+            status=ScrapeStatus(serialized["status"]),
+            debug_next_step_chat=cls._process_debug_chat(
+                serialized["debug_next_step_chat"]
+            ),
+            debug_choose_action_chat=cls._process_debug_chat(
+                serialized["debug_choose_action_chat"]
+            ),
+            start_timestamp=serialized["start_timestamp"],
+            timestamp=serialized["timestamp"],
+        )
+
 
 class RunEventMetadata(BaseModel):
     id: UUID

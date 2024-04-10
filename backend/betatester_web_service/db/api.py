@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_scoped_session
 from betatester_web_service.betatester_web_service_types import (
     RunEventMetadata,
     RunMessage,
+    RunStep,
     ScrapeStatus,
     TestConfig,
 )
@@ -154,7 +155,10 @@ async def get_test_event(
             page_views=cast(int, event.page_views),
             action_count=cast(int, event.action_count),
             status=cast(ScrapeStatus, event.status),
-            steps=cast(list, event.event_history),
+            steps=[
+                RunStep.from_serialized(step)
+                for step in cast(list[dict], event.event_history)
+            ],
             start_timestamp=cast(str, event.created_at.isoformat()),
             timestamp=cast(str, event.updated_at.isoformat()),
             max_page_views=cast(int, event.max_page_views),

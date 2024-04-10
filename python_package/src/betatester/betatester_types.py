@@ -1,7 +1,7 @@
 import base64
 from abc import abstractmethod
 from enum import Enum
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Union, cast
 from uuid import UUID
 
 from pydantic import BaseModel, model_serializer
@@ -37,12 +37,15 @@ class ModelChatContentType(str, Enum):
     image_url = "image_url"
 
 
+SerializedModelChatContent = dict[str, Union[str, dict]]
+
+
 class ModelChatContent(BaseModel):
     type: ModelChatContentType
     content: Union[str, ModelChatContentImage]
 
     @model_serializer
-    def serialize(self) -> dict[str, Union[str, dict]]:
+    def serialize(self) -> SerializedModelChatContent:
         content_key = self.type.value
         content_value = (
             self.content
@@ -50,6 +53,19 @@ class ModelChatContent(BaseModel):
             else self.content.model_dump()
         )
         return {"type": self.type.value, content_key: content_value}
+
+    @classmethod
+    def from_serialized(
+        cls, data: SerializedModelChatContent
+    ) -> "ModelChatContent":
+        type_ = ModelChatContentType(data["type"])
+        content_key = type_.value
+        content_value = data[content_key]
+        if type_ == ModelChatContentType.image_url:
+            content = ModelChatContentImage(**cast(dict, content_value))
+        else:
+            content = cast(str, content_value)
+        return cls(type=type_, content=content)
 
 
 class ModelChat(BaseModel):
@@ -69,6 +85,20 @@ class ModelChat(BaseModel):
                 )
             ],
         )
+
+    @classmethod
+    def from_serialized(
+        cls, data: dict[str, Union[str, list[SerializedModelChatContent]]]
+    ) -> "ModelChat":
+        role = ModelChatType(data["role"])
+        if isinstance(data["content"], str):
+            return cls(role=role, content=cast(str, data["content"]))
+        else:
+            content = [
+                ModelChatContent.from_serialized(content_data)
+                for content_data in data["content"]
+            ]
+            return cls(role=role, content=content)
 
 
 class ToolChoiceFunction(BaseModel):
