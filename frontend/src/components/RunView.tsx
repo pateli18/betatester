@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Action, ModelChat, RunMessage, ScrapeStatus, RunStep } from "../types";
 import {
-  AutoScroll,
   ConfigInfo,
   CounterDisplay,
   CustomMarkdown,
@@ -57,6 +56,24 @@ const DebugStepView = (props: {
   nextStepChat: ModelChat[] | null;
   chooseActionChat: ModelChat[] | null;
 }) => {
+  let chooseActionChatFmt = null;
+  if (props.chooseActionChat) {
+    chooseActionChatFmt = props.chooseActionChat.map((chat) => {
+      if (chat.role === "assistant" && typeof chat.content === "string") {
+        // attempt to load the content as JSON, prettify if successful and wrap in ```json\n...\n```
+        try {
+          let json = JSON.parse(chat.content);
+          json = `\`\`\`json\n${json}\n\`\`\``;
+          return { ...chat, content: json };
+        } catch (e) {
+          return chat;
+        }
+      } else {
+        return chat;
+      }
+    });
+  }
+
   return (
     <>
       <h3 className="text-lg font-medium">Debug</h3>
@@ -64,8 +81,8 @@ const DebugStepView = (props: {
         {props.nextStepChat && (
           <DebugChatView chat={props.nextStepChat} title="Next Step Chat" />
         )}
-        {props.chooseActionChat && (
-          <DebugChatView chat={props.chooseActionChat} title="Action Chat" />
+        {chooseActionChatFmt && (
+          <DebugChatView chat={chooseActionChatFmt} title="Action Chat" />
         )}
       </Accordion>
     </>
@@ -173,10 +190,6 @@ const StepView = (props: {
       {props.runStep.action_count !== null && (
         <Badge>{`${props.runStep.action_count} Actions`}</Badge>
       )}
-      <img
-        src={`/data/screenshot/${props.runId}/${props.runStep.step_id}.png`}
-        className="rounded-md shadow-md"
-      />
       <div>
         <h3 className="text-lg font-medium">Next Step</h3>
         <CustomMarkdown content={props.runStep.next_step} />
@@ -186,6 +199,10 @@ const StepView = (props: {
       ) : (
         <Badge variant="destructive">No action</Badge>
       )}
+      <img
+        src={`/data/screenshot/${props.runId}/${props.runStep.step_id}.png`}
+        className="rounded-md shadow-md"
+      />
       {(props.runStep.debug_choose_action_chat ||
         props.runStep.debug_next_step_chat) && (
         <DebugStepView
@@ -212,64 +229,62 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
   }, [props.runMessage.steps.length]);
 
   return (
-    <AutoScroll disabled={props.runMessage.status !== "running"}>
-      <div className="space-y-5">
-        <Button
-          variant="secondary"
-          onClick={() => navigator(`/?configId=${props.runMessage.config_id}`)}
-        >
-          Back to History
-        </Button>
-        <ConfigInfo
-          url={props.runMessage.url}
-          high_level_goal={props.runMessage.high_level_goal}
-        />
-        <div className="space-x-2 flex items-center">
-          <div className="text-lg font-medium">{props.runMessage.id}</div>
-          {props.runMessage.status !== "running" && (
-            <TraceLink trace_url={props.runMessage.trace_url} />
-          )}
-        </div>
-        <div className="flex items-center space-x-2">
-          <StatusDisplay status={props.runMessage.status} />
-          {props.runMessage.status === "running" && (
-            <StopButton
-              configId={props.runMessage.config_id}
-              scrapeId={props.runMessage.id}
-              reload={false}
-            />
-          )}
-        </div>
-        <div className="space-x-2">
-          <CounterDisplay
-            count={props.runMessage.page_views}
-            total={props.runMessage.max_page_views}
-            text="Max Page Views"
-          />
-          <CounterDisplay
-            count={props.runMessage.action_count}
-            total={props.runMessage.max_total_actions}
-            text="Max Actions"
-          />
-        </div>
-        {props.runMessage.fail_reason && (
-          <div className="text-xs text-red-500">
-            {props.runMessage.fail_reason}
-          </div>
+    <div className="space-y-5">
+      <Button
+        variant="secondary"
+        onClick={() => navigator(`/?configId=${props.runMessage.config_id}`)}
+      >
+        Back to History
+      </Button>
+      <ConfigInfo
+        url={props.runMessage.url}
+        high_level_goal={props.runMessage.high_level_goal}
+      />
+      <div className="space-x-2 flex items-center">
+        <div className="text-lg font-medium">{props.runMessage.id}</div>
+        {props.runMessage.status !== "running" && (
+          <TraceLink trace_url={props.runMessage.trace_url} />
         )}
-        <div className="text-xs text-muted-foreground">
-          {loadAndFormatDate(props.runMessage.timestamp)}
-        </div>
-        {props.runMessage.steps.length > 0 && (
-          <StepView
-            runId={props.runMessage.id}
-            runStep={props.runMessage.steps[stepIndex]}
-            runIndex={stepIndex}
-            numRuns={props.runMessage.steps.length}
-            setRunIndex={setStepIndex}
+      </div>
+      <div className="flex items-center space-x-2">
+        <StatusDisplay status={props.runMessage.status} />
+        {props.runMessage.status === "running" && (
+          <StopButton
+            configId={props.runMessage.config_id}
+            scrapeId={props.runMessage.id}
+            reload={false}
           />
         )}
       </div>
-    </AutoScroll>
+      <div className="space-x-2">
+        <CounterDisplay
+          count={props.runMessage.page_views}
+          total={props.runMessage.max_page_views}
+          text="Max Page Views"
+        />
+        <CounterDisplay
+          count={props.runMessage.action_count}
+          total={props.runMessage.max_total_actions}
+          text="Max Actions"
+        />
+      </div>
+      {props.runMessage.fail_reason && (
+        <div className="text-xs text-red-500">
+          {props.runMessage.fail_reason}
+        </div>
+      )}
+      <div className="text-xs text-muted-foreground">
+        {loadAndFormatDate(props.runMessage.timestamp)}
+      </div>
+      {props.runMessage.steps.length > 0 && (
+        <StepView
+          runId={props.runMessage.id}
+          runStep={props.runMessage.steps[stepIndex]}
+          runIndex={stepIndex}
+          numRuns={props.runMessage.steps.length}
+          setRunIndex={setStepIndex}
+        />
+      )}
+    </div>
   );
 };

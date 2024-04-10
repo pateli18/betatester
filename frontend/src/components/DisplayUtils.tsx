@@ -2,7 +2,7 @@ import { Badge, badgeVariants } from "@/components/ui/badge";
 import { ScrapeStatus } from "../types";
 import Markdown from "react-markdown";
 import { ReloadIcon, StopIcon } from "@radix-ui/react-icons";
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { stopScrape } from "../utils/apiCalls";
 import { toast } from "sonner";
@@ -47,30 +47,6 @@ export const CounterDisplay = (props: {
     <Badge className={badgeColor}>
       {props.count}/{props.total} {props.text}
     </Badge>
-  );
-};
-
-export const AutoScroll = (props: {
-  children: ReactNode;
-  disabled?: boolean;
-}) => {
-  const endOfContentRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    endOfContentRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    if (!props.disabled) {
-      scrollToBottom();
-    }
-  }, [props.children]);
-
-  return (
-    <div className="overflow-y-auto h-[100%]">
-      {props.children}
-      <div ref={endOfContentRef} />
-    </div>
   );
 };
 
