@@ -6,7 +6,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       <NavBar />
       <div className="flex flex-col min-h-screen">
         <div className="flex-grow">
-          <div className="flex-1 space-y-4 sm:p-8 sm:pt-6">{children}</div>
+          <div className="flex-1 space-y-4 sm:p-8 sm:pt-6 p-2 pt-1">
+            {children}
+          </div>
         </div>
       </div>
     </div>

@@ -4,18 +4,24 @@ import { RunEventMetadata } from "src/types";
 import { loadAndFormatDate } from "../utils/date";
 import { StatusDisplay, StopButton, TraceLink } from "./DisplayUtils";
 
+const IdDisplay = (props: { id: string }) => {
+  const id = props.id.substring(0, 5);
+
+  return <span className="font-bold">{id}</span>;
+};
+
 const TestEventMetadataView = (props: { event: RunEventMetadata }) => {
   const navigate = useNavigate();
   return (
     <div
-      className="space-x-5 hover:bg-gray-100 p-3 rounded-lg hover:cursor-pointer"
+      className="space-x-5 hover:bg-gray-100 py-3 rounded-lg hover:cursor-pointer"
       onClick={() =>
         navigate(`/scrape/${props.event.config_id}/${props.event.id}`)
       }
     >
       <StatusDisplay status={props.event.status} />
-      <span className="font-bold">{props.event.id}</span>
-      <span className="text-muted-foreground">
+      <IdDisplay id={props.event.id} />
+      <span className="text-muted-foreground text-xs">
         {loadAndFormatDate(props.event.timestamp)}
       </span>
       {props.event.status === "running" && (

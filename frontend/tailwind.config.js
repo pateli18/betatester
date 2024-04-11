@@ -17,6 +17,9 @@ module.exports = {
       },
     },
     extend: {
+      scale: {
+        '250':'2.5',
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

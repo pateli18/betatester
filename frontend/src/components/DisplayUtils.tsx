@@ -64,7 +64,7 @@ export const TraceLink = (props: { trace_url: string }) => {
       className={badgeVariants({ variant: "secondary" })}
       onClick={handleClick}
     >
-      View Playwright Trace
+      Trace
     </a>
   );
 };

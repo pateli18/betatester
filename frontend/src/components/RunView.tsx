@@ -127,7 +127,6 @@ const StepStatus = (props: { status: ScrapeStatus; timestamp: string }) => {
 const StepAction = (props: { action: Action }) => {
   return (
     <div>
-      <h3 className="text-lg font-medium">Action</h3>
       <h5 className="text-gray-500">Element</h5>
       <div className="space-x-2">
         {props.action.element.role && (
@@ -166,9 +165,10 @@ const StepView = (props: {
           <div className="text-lg font-medium">{`Step ${props.runIndex + 1} / ${
             props.numRuns
           }`}</div>
-          <div className="text-xs text-muted-foreground">
-            {props.runStep.step_id}
-          </div>
+          <StepStatus
+            status={props.runStep.status}
+            timestamp={props.runStep.timestamp}
+          />
           <div className="space-x-2 flex items-center">
             <Button
               disabled={props.runIndex === 0}
@@ -189,26 +189,24 @@ const StepView = (props: {
           </div>
         </>
       )}
-      <StepStatus
-        status={props.runStep.status}
-        timestamp={props.runStep.timestamp}
-      />
-      {props.runStep.action_count !== null && (
-        <Badge>{`${props.runStep.action_count} Actions`}</Badge>
-      )}
       <div>
         <h3 className="text-lg font-medium">Next Step</h3>
         <CustomMarkdown content={props.runStep.next_step} />
       </div>
+      {props.runStep.action_count !== null && (
+        <Badge>{`${props.runStep.action_count} Action Attempts`}</Badge>
+      )}
       {props.runStep.action_count !== null && props.runStep.action ? (
         <StepAction action={props.runStep.action} />
       ) : (
         <Badge variant="destructive">No action</Badge>
       )}
-      <img
-        src={`/data/screenshot/${props.runId}/${props.runStep.step_id}.png`}
-        className="rounded-md shadow-md"
-      />
+      <div className="hover:scale-250 transition-transform duration-50 origin-bottom-left">
+        <img
+          src={`/data/screenshot/${props.runId}/${props.runStep.step_id}.png`}
+          className="rounded-md shadow-md w-[300px] h-auto"
+        />
+      </div>
       {(props.runStep.debug_choose_action_chat ||
         props.runStep.debug_next_step_chat) && (
         <DebugStepView
@@ -246,12 +244,6 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
         url={props.runMessage.url}
         high_level_goal={props.runMessage.high_level_goal}
       />
-      <div className="space-x-2 flex items-center">
-        <div className="text-lg font-medium">{props.runMessage.id}</div>
-        {props.runMessage.status !== "running" && (
-          <TraceLink trace_url={props.runMessage.trace_url} />
-        )}
-      </div>
       <div className="flex items-center space-x-2">
         <StatusDisplay status={props.runMessage.status} />
         {props.runMessage.status === "running" && (
@@ -261,7 +253,18 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
             reload={false}
           />
         )}
+        <div className="text-xs text-muted-foreground">
+          {loadAndFormatDate(props.runMessage.timestamp)}
+        </div>
+        {props.runMessage.status !== "running" && (
+          <TraceLink trace_url={props.runMessage.trace_url} />
+        )}
       </div>
+      {props.runMessage.fail_reason && (
+        <div className="text-xs text-red-500">
+          {props.runMessage.fail_reason}
+        </div>
+      )}
       <div className="space-x-2">
         <CounterDisplay
           count={props.runMessage.page_views}
@@ -273,14 +276,6 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
           total={props.runMessage.max_total_actions}
           text="Max Actions"
         />
-      </div>
-      {props.runMessage.fail_reason && (
-        <div className="text-xs text-red-500">
-          {props.runMessage.fail_reason}
-        </div>
-      )}
-      <div className="text-xs text-muted-foreground">
-        {loadAndFormatDate(props.runMessage.timestamp)}
       </div>
       {props.runMessage.steps.length > 0 && (
         <StepView

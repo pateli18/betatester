@@ -8,7 +8,6 @@ import { ExclamationTriangleIcon, PlusIcon } from "@radix-ui/react-icons";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2 } from "lucide-react";
 import { TestEventHistoryView } from "../components/TestHistoryView";
 import { TestConfigForm } from "../components/TestConfigForm";
 import {
@@ -62,7 +61,7 @@ const ConfigSelection = (props: {
       value={props.configId ?? undefined}
       onValueChange={props.setConfigId}
     >
-      <SelectTrigger className="overflow-hidden whitespace-nowrap w-[300px]">
+      <SelectTrigger className="overflow-hidden whitespace-nowrap w-[250px]">
         <SelectValue placeholder="Select Service" />
       </SelectTrigger>
       <SelectContent>
