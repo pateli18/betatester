@@ -90,10 +90,11 @@ class ExecutorBase:
 class ScrapeStepExecutor(ExecutorBase):
     def __init__(
         self,
+        high_level_goal: str,
+        previous_steps: list[str],
         page: Page,
         variables: ScrapeVariables,
         files: ScrapeFiles,
-        next_step_chat: list[ModelChat],
         openai_api_key: str,
         max_action_attempts: Optional[int] = 5,
         scrape_id: Optional[UUID] = None,
@@ -112,7 +113,9 @@ class ScrapeStepExecutor(ExecutorBase):
         self.max_action_attempts = max_action_attempts
         self._openai_api_key = openai_api_key
 
-        self.next_step_chat = next_step_chat
+        self.next_step_chat = [
+            create_next_step_system_prompt(high_level_goal, previous_steps)
+        ]
         self.choose_action_chat = [
             create_choose_action_system_prompt(self.variables, self.files)
         ]
@@ -124,6 +127,8 @@ class ScrapeStepExecutor(ExecutorBase):
         self.file_client = file_client
 
         self.model_client = model_client
+
+        self.next_instruction: Optional[str] = None
 
     async def _take_screenshot(self) -> str:
         screenshot_bytes = await self.page.screenshot(full_page=True)
@@ -355,18 +360,18 @@ class ScrapeStepExecutor(ExecutorBase):
         try:
             encoded_image = await self._take_screenshot()
             html_coro = self._get_html()
-            next_instruction = await self._get_next_step(
+            self.next_instruction = await self._get_next_step(
                 encoded_image, model_client
             )
             html = await html_coro
-            if "DONE" in next_instruction:
+            if "DONE" in self.next_instruction:
                 # stop the html coroutine if we are done
                 return True
-            elif "WAIT" in next_instruction:
+            elif "WAIT" in self.next_instruction:
                 return False
 
             await self._choose_and_execute_action(
-                next_instruction, html, model_client
+                self.next_instruction, html, model_client
             )
         finally:
             if self.model_client is None:
@@ -412,7 +417,6 @@ class ScrapeExecutor(ExecutorBase):
         self.variables = variables or {}
         self.files = files or {}
 
-        self.next_step_chat = [create_next_step_system_prompt(high_level_goal)]
         self.scrape_page_view_count = 0
         self.scrape_action_count = 0
 
@@ -420,6 +424,8 @@ class ScrapeExecutor(ExecutorBase):
         self.save_playwright_trace = save_playwright_trace
 
         self.model_client = model_client
+
+        self.previous_steps: list[str] = []
 
     async def run(self) -> None:
         async with async_playwright() as p:
@@ -496,10 +502,11 @@ class ScrapeExecutor(ExecutorBase):
             )
 
             step_executor = ScrapeStepExecutor(
+                high_level_goal=self.high_level_goal,
+                previous_steps=self.previous_steps,
                 page=page,
                 variables=self.variables,
                 files=self.files,
-                next_step_chat=self.next_step_chat,
                 openai_api_key=self._openai_api_key,
                 max_action_attempts=self.max_action_attempts,
                 subscriptions=self.subscriptions,
@@ -511,7 +518,8 @@ class ScrapeExecutor(ExecutorBase):
                 done = await step_executor.run()
             except MaxActionAttemptsReachedException as e:
                 logger.warning(e)
-            self.next_step_chat = step_executor.next_step_chat
+            if step_executor.next_instruction is not None:
+                self.previous_steps.append(step_executor.next_instruction)
             self.scrape_action_count += step_executor.actions_count
 
             if done:

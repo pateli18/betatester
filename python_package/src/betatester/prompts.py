@@ -13,19 +13,32 @@ from .betatester_types import (
 
 def create_next_step_system_prompt(
     high_level_goal: str,
+    previous_steps: list[str],
 ) -> ModelChat:
+    previous_steps_str = (
+        "\n".join([f"{i}. {step}" for i, step in enumerate(previous_steps)])
+        if previous_steps
+        else "None"
+    )
+
     system_prompt = f"""
 ### FACTS
 - You are an expert website tester
 - You are given a HIGH_LEVEL_GOAL to accomplish on a website and a screenshot of the website
+- You are given PREVIOUS_STEPS that have been proposed to accomplish the HIGH_LEVEL_GOAL
 
 ### RULES
-- You should provide the next step to accomplish the high level goal (e.g. click a specific button, fill a specific form, etc.)
+- You should provide the next step (e.g. click a specific button, fill a specific form, etc.) to accomplish the HIGH_LEVEL_GOAL given the PREVIOUS_STEPS
 - Only provide one step at a time
+- Avoid proposing steps that have already been proposed in the PREVIOUS_STEPS unless you have a good reason to do so
 - If the page has not been loaded, return WAIT
 - If the HIGH_LEVEL_GOAL has been accomplished, return DONE
+    - Only return DONE if the screen you are looking at indicates the goal is complete
 
 HIGH_LEVEL_GOAL: {high_level_goal}
+
+PREVIOUS_STEPS:
+{previous_steps_str}
 """
 
     return ModelChat(
