@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Action, ModelChat, RunMessage, ScrapeStatus, RunStep } from "../types";
 import {
+  ChatPanel,
   ConfigInfo,
   CounterDisplay,
   CustomMarkdown,
@@ -18,17 +19,23 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Separator } from "@/components/ui/separator";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 
 const DebugChatView = (props: { chat: ModelChat[]; title: string }) => {
+  const [modelChat, setModelChat] = useState<ModelChat[]>(props.chat);
+
+  useEffect(() => {
+    setModelChat(props.chat);
+  }, [props.chat]);
+
   return (
     <AccordionItem value={props.title}>
       <AccordionTrigger>{props.title}</AccordionTrigger>
       <AccordionContent>
         <div className="space-y-2">
           <div>
-            {props.chat.map((chat, index) => (
+            {modelChat.map((chat, index) => (
               <div key={index}>
                 <h5 className="text-gray-500 mb-2">
                   {chat.role.toUpperCase()}
@@ -40,11 +47,10 @@ const DebugChatView = (props: { chat: ModelChat[]; title: string }) => {
                       : "**Image**"
                   }
                 />
-                {index < props.chat.length - 1 && (
-                  <Separator className="mt-5 mb-5" />
-                )}
+                <Separator className="mt-5 mb-5" />
               </div>
             ))}
+            <ChatPanel chat={modelChat} updateChat={setModelChat} />
           </div>
         </div>
       </AccordionContent>

@@ -1,10 +1,22 @@
 import asyncio
+import json
 import logging
+from typing import AsyncGenerator
 from uuid import UUID
 
-from betatester.betatester_types import ExecutorMessage
+from betatester.betatester_types import (
+    ExecutorMessage,
+    ModelChat,
+    ModelChatContentType,
+    ModelChatType,
+    ModelType,
+    OpenAiChatInput,
+)
+from betatester.model import openai_stream_response_generator
 from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, validator
 from sqlalchemy.ext.asyncio import async_scoped_session
 from sse_starlette.sse import EventSourceResponse
 
@@ -23,6 +35,7 @@ from betatester_web_service.db.api import (
 from betatester_web_service.db.base import async_session_scope, get_session
 from betatester_web_service.file import file_client
 from betatester_web_service.task_manager import task_manager
+from betatester_web_service.utils import model_client, settings
 
 logger = logging.getLogger(__name__)
 
@@ -169,3 +182,59 @@ async def run_status_ui(
                 await asyncio.sleep(15)
 
     return EventSourceResponse(event_generator())
+
+
+class ChatRequest(BaseModel):
+    chat: list[ModelChat]
+
+    @validator("chat", pre=True)
+    def validate_chat(cls, v):
+        reconstructed_chat = [ModelChat.from_serialized(item) for item in v]
+        return reconstructed_chat
+
+
+@router.post("/chat", include_in_schema=False)
+async def chat_endpoint(request: ChatRequest):
+    async def openai_chat_stream(
+        request: OpenAiChatInput,
+    ) -> AsyncGenerator[str, None]:
+        async for output in openai_stream_response_generator(
+            model_client, request, settings.openai_api_key
+        ):
+            if "error" in output:
+                yield output["error"]
+                break
+            else:
+                chat = ModelChat(
+                    role=ModelChatType.assistant, content=output["content"]
+                )
+                yield json.dumps(
+                    {
+                        "content": chat.model_dump(),
+                    }
+                ) + "\n"
+
+    model = ModelType.gpt4turbo
+    max_tokens = None
+    stop = None
+    for message in request.chat:
+        if isinstance(message.content, list):
+            for item in message.content:
+                if item.type == ModelChatContentType.image_url:
+                    model = ModelType.gpt4vision
+                    max_tokens = 1000
+                    stop = "<<END>>"
+                    break
+
+    chat_input = OpenAiChatInput(
+        messages=request.chat,
+        stream=True,
+        model=model,
+        max_tokens=max_tokens,
+        stop=stop,
+    )
+
+    return StreamingResponse(
+        openai_chat_stream(chat_input),
+        media_type="application/x-ndjson",
+    )

@@ -1,12 +1,13 @@
 import { Badge, badgeVariants } from "@/components/ui/badge";
-import { ScrapeStatus } from "../types";
+import { ModelChat, ScrapeStatus } from "../types";
 import Markdown from "react-markdown";
 import { ReloadIcon, StopIcon } from "@radix-ui/react-icons";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { stopScrape } from "../utils/apiCalls";
+import { getChatResponse, stopScrape } from "../utils/apiCalls";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 export const StatusDisplay = (props: { status: ScrapeStatus }) => {
   switch (props.status) {
@@ -130,6 +131,102 @@ export const DataLoading = () => {
     <div className="flex items-center justify-center h-40">
       <Loader2 className="h-8 w-8 animate-spin" />
       <div className="ml-2">Loading Data</div>
+    </div>
+  );
+};
+
+export const ChatPanel = (props: {
+  updateChat: (message: ModelChat[]) => void;
+  chat: ModelChat[];
+}) => {
+  const [chatLoading, setChatLoading] = useState<boolean>(false);
+  const [input, setInput] = useState<string>("");
+  const cancelRef = useRef<boolean>(false);
+
+  const cancelOperation = () => {
+    cancelRef.current = true;
+  };
+
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ): void => {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing &&
+      !chatLoading
+    ) {
+      event.preventDefault();
+      if (input !== "") {
+        userMessage(input);
+      }
+    }
+  };
+
+  const userMessage = (input: string) => {
+    props.updateChat([...props.chat, { role: "user", content: input }]);
+  };
+
+  useEffect(() => {
+    if (
+      props.chat.length > 0 &&
+      props.chat[props.chat.length - 1].role === "user" &&
+      !chatLoading
+    ) {
+      onSubmit(props.chat);
+    }
+  }, [props.chat]);
+
+  const onSubmit = async (chat: ModelChat[]) => {
+    cancelRef.current = false;
+    setChatLoading(true);
+    setInput("");
+    try {
+      for await (const chatOutput of getChatResponse(chat)) {
+        if (cancelRef.current) {
+          break;
+        }
+
+        props.updateChat([...chat, chatOutput.content]);
+      }
+    } catch (e) {
+      console.error("error getting explanation", e);
+      toast.error("Something went wrong, try again");
+    }
+    setChatLoading(false);
+  };
+
+  return (
+    <div>
+      <div className="relative flex">
+        <Textarea
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          rows={1}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={"Enter your message here..."}
+          spellCheck={false}
+          className="pr-20"
+          disabled={chatLoading}
+        />
+        <div className="absolute right-0 top-4 sm:right-4">
+          {chatLoading ? (
+            <Button size="sm" onClick={cancelOperation}>
+              <StopIcon className="mr-2" />
+              Stop
+            </Button>
+          ) : (
+            <Button
+              onClick={() => userMessage(input)}
+              size="sm"
+              disabled={input === "" || chatLoading}
+            >
+              Send
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

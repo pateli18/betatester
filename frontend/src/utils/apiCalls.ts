@@ -1,4 +1,10 @@
-import { Config, ConfigMetadata, FileInfo, RunEventMetadata } from "src/types";
+import {
+  Config,
+  ConfigMetadata,
+  FileInfo,
+  ModelChat,
+  RunEventMetadata,
+} from "src/types";
 import Ajax from "./Ajax";
 
 export const upsertConfig = async (
@@ -95,4 +101,22 @@ export const getConfig = async (configId: string) => {
     console.error(e);
   }
   return response;
+};
+
+export const getChatResponse = async function* (chat: ModelChat[]) {
+  for await (const payload of Ajax.stream<{
+    content: ModelChat;
+    error: string | null;
+  }>({
+    url: `/api/v1/scraper/chat`,
+    method: "POST",
+    body: {
+      chat: chat,
+    },
+  })) {
+    if (payload.error) {
+      throw new Error(payload.error);
+    }
+    yield payload;
+  }
 };
