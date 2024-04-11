@@ -192,11 +192,28 @@ class ActionElement(BaseModel):
     name: Optional[str] = None
     selector: Optional[str] = None
 
+    def __str__(self) -> str:
+        output = "\x1b[33;21melement\x1b[0m:"
+        if self.selector is not None:
+            output += f"selector={self.selector}"
+        else:
+            output += f"role={self.role},name={self.name}"
+        return output
+
 
 class Action(BaseModel):
     element: ActionElement
     action_type: ActionType
     action_value: Optional[str] = None
+
+    def __str__(self) -> str:
+        output = (
+            f"{self.element} \x1b[33;21maction_type\x1b[0m:{self.action_type}"
+        )
+        if self.action_value is not None:
+            output += f" \x1b[33;21maction_value\x1b[0m:{self.action_value}"
+
+        return output
 
 
 class ExecutorMessage(BaseModel):
@@ -219,17 +236,17 @@ class FileClient:
     @abstractmethod
     async def save_img(
         self, scrape_id: UUID, step_id: UUID, img: bytes
-    ) -> None:
+    ) -> str:
         raise NotImplementedError()
 
     @abstractmethod
     async def save_html(
         self, scrape_id: UUID, step_id: UUID, html: str, html_type: HtmlType
-    ) -> None:
+    ) -> str:
         raise NotImplementedError()
 
     @abstractmethod
-    async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> None:
+    async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> str:
         raise NotImplementedError()
 
     @abstractmethod
@@ -239,3 +256,7 @@ class FileClient:
     @abstractmethod
     def trace_path(self, scrape_id: UUID) -> str:
         raise NotImplementedError()
+
+
+class FileClientType(str, Enum):
+    local = "local"

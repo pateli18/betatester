@@ -2,13 +2,10 @@ import logging.config
 from enum import Enum
 
 import httpx
+from betatester.betatester_types import FileClientType
 from pydantic_settings import BaseSettings
 
 model_client = httpx.AsyncClient()
-
-
-class FileProviderType(str, Enum):
-    local = "local"
 
 
 class Environment(str, Enum):
@@ -19,8 +16,8 @@ class Environment(str, Enum):
 class Settings(BaseSettings):
     openai_api_key: str
     postgres_uri: str
-    file_provider: FileProviderType = FileProviderType.local
-    file_provider_config: str = '{"save_path": "/app-data/"}'
+    file_client_type: FileClientType = FileClientType.local
+    file_client_config: str = '{"save_path": "/app-data/"}'
     base_url: str = "http://localhost:8080"
     environment: Environment = Environment.dev
     log_level: str = "INFO"

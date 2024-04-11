@@ -51,25 +51,31 @@ class LocalFileClient(FileClient):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         return path
 
-    async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> None:
+    async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> str:
         path = self._create_traces_path(scrape_id)
         async with aiofiles.open(tmp_trace_path, "rb") as f:
             async with aiofiles.open(path, "wb") as f_out:
                 await f_out.write(await f.read())
 
+        return path
+
     async def save_img(
         self, scrape_id: UUID, step_id: UUID, img: bytes
-    ) -> None:
+    ) -> str:
         path = self._create_imgs_path(scrape_id, step_id)
         async with aiofiles.open(path, "wb") as f_out:
             await f_out.write(img)
 
+        return path
+
     async def save_html(
         self, scrape_id: UUID, step_id: UUID, html: str, html_type: HtmlType
-    ) -> None:
+    ) -> str:
         path = self._create_html_path(scrape_id, step_id, html_type)
         async with aiofiles.open(path, "w") as f_out:
             await f_out.write(html)
+
+        return path
 
     def img_path(self, scrape_id: UUID, step_id: UUID) -> str:
         return self._create_imgs_path(scrape_id, step_id)
