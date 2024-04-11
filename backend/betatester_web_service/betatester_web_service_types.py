@@ -47,7 +47,7 @@ class TestConfig(ConfigBase):
             variables=self.variables,
             files=self.files,
             openai_api_key=settings.openai_api_key,
-            model_client=model_client,
+            http_client=model_client,
             file_client=file_client,
             save_playwright_trace=True,
         )

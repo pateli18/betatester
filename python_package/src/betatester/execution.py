@@ -100,9 +100,39 @@ class ScrapeStepExecutor(ExecutorBase):
         scrape_id: Optional[UUID] = None,
         step_id: Optional[UUID] = None,
         file_client: Optional[FileClient] = None,
-        model_client: Optional[httpx.AsyncClient] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
         subscriptions: Optional[set[asyncio.Queue[ExecutorMessage]]] = None,
     ) -> None:
+        """
+        Executes a single test step
+
+        Examples:
+            ```python
+            scrape_step_executor = ScrapeStepExecutor(
+                high_level_goal="Find images of cats",
+                previous_steps=["Navigate to google.com"],
+                page=page,
+                variables={},
+                files={},
+                openai_api_key="...",
+            )
+            await scrape_step_executor.run()
+            ```
+
+        Args:
+            high_level_goal (str): High level goal to accomplish at the URL
+            previous_steps (list[str]): Previous steps taken in the test
+            page (Page): Playwright page object
+            variables (ScrapeVariables): Variables to use in the scrape, e.g. for filling in a username and password to log in
+            files (ScrapeFiles): Files to use in the scrape, e.g. for uploading some data as part of the goal
+            openai_api_key (str): OpenAI API key, see https://platform.openai.com/api-keys
+            max_action_attempts (Optional[int], optional): Max actions to take on a single page. Defaults to 5.
+            scrape_id (Optional[UUID], optional): Scrape ID. Defaults to None.
+            step_id (Optional[UUID], optional): Step ID. Defaults to None.
+            file_client (Optional[FileClient], optional): File client to use for saving images, html, and traces. Defaults to None.
+            http_client (Optional[httpx.AsyncClient], optional): Http client to use for making requests, pass one through to reuse across tests. Defaults to None.
+            subscriptions (Optional[set[asyncio.Queue[ExecutorMessage]], optional): Subscriptions that will receive messages from the executor as it progresses. Defaults to None.
+        """
         super().__init__(subscriptions)
         self.page = page
         self.variables = variables
@@ -126,7 +156,7 @@ class ScrapeStepExecutor(ExecutorBase):
 
         self.file_client = file_client
 
-        self.model_client = model_client
+        self.http_client = http_client
 
         self.next_instruction: Optional[str] = None
 
@@ -171,7 +201,7 @@ class ScrapeStepExecutor(ExecutorBase):
         return html_mrkdown
 
     async def _get_next_step(
-        self, encoded_image: str, model_client: httpx.AsyncClient
+        self, encoded_image: str, http_client: httpx.AsyncClient
     ) -> str:
         self.next_step_chat.append(
             ModelChat.from_b64_image(
@@ -189,7 +219,7 @@ class ScrapeStepExecutor(ExecutorBase):
 
         next_instruction = ""
         async for output in openai_stream_response_generator(
-            model_client, openai_chat_input, self._openai_api_key
+            http_client, openai_chat_input, self._openai_api_key
         ):
             if "error" in output:
                 raise NextStepNotFoundException(output["error"])
@@ -218,7 +248,7 @@ class ScrapeStepExecutor(ExecutorBase):
 
         return next_instruction
 
-    async def _choose_action(self, model_client: httpx.AsyncClient) -> Action:
+    async def _choose_action(self, http_client: httpx.AsyncClient) -> Action:
 
         prompt = OpenAiChatInput(
             messages=self.choose_action_chat,
@@ -228,7 +258,7 @@ class ScrapeStepExecutor(ExecutorBase):
         )
 
         response = await send_openai_request(
-            model_client,
+            http_client,
             prompt.data,
             "chat/completions",
             self._openai_api_key,
@@ -307,13 +337,13 @@ class ScrapeStepExecutor(ExecutorBase):
             )
 
     async def _choose_and_execute_action(
-        self, next_instruction: str, html: str, model_client: httpx.AsyncClient
+        self, next_instruction: str, html: str, http_client: httpx.AsyncClient
     ) -> None:
         self.choose_action_chat.append(
             create_choose_action_user_message(next_instruction, html)
         )
         while True:
-            action = await self._choose_action(model_client)
+            action = await self._choose_action(http_client)
 
             self.actions_count += 1
             self.publish(
@@ -371,16 +401,16 @@ class ScrapeStepExecutor(ExecutorBase):
                 )
 
     async def run(self) -> bool:
-        if self.model_client is None:
-            model_client = httpx.AsyncClient()
+        if self.http_client is None:
+            http_client = httpx.AsyncClient()
         else:
-            model_client = self.model_client
+            http_client = self.http_client
 
         try:
             encoded_image = await self._take_screenshot()
             html_coro = self._get_html()
             self.next_instruction = await self._get_next_step(
-                encoded_image, model_client
+                encoded_image, http_client
             )
             html = await html_coro
             if "DONE" in self.next_instruction:
@@ -392,11 +422,11 @@ class ScrapeStepExecutor(ExecutorBase):
                 return False
 
             await self._choose_and_execute_action(
-                self.next_instruction, html, model_client
+                self.next_instruction, html, http_client
             )
         finally:
-            if self.model_client is None:
-                await model_client.aclose()
+            if self.http_client is None:
+                await http_client.aclose()
         return False
 
 
@@ -415,11 +445,43 @@ class ScrapeExecutor(ExecutorBase):
         files: Optional[ScrapeFiles] = None,
         scrape_id: Optional[UUID] = None,
         file_client: Optional[FileClient] = None,
-        save_playwright_trace: bool = True,
-        model_client: Optional[httpx.AsyncClient] = None,
+        save_playwright_trace: bool = False,
+        http_client: Optional[httpx.AsyncClient] = None,
         subscriptions: Optional[set[asyncio.Queue[ExecutorMessage]]] = None,
         headless: bool = True,
     ) -> None:
+        """
+        Runs a test on a given URL with a high level goal until the goal is completed or it errors out
+
+        Examples:
+            ```python
+            scrape_executor = ScrapeExecutor(
+                url="https://google.com",
+                high_level_goal="Find images of cats",
+                openai_api_key="...",
+            )
+            await scrape_executor.run()
+            ```
+
+        Args:
+            url (str): URL to test
+            high_level_goal (str): High level goal to accomplish at the URL
+            openai_api_key (str): OpenAI API key, see https://platform.openai.com/api-keys
+            max_page_views (Optional[int], optional): Max page views to take across the entire test. Defaults to 10.
+            max_total_actions (Optional[int], optional): Max total actions to take across the entire test. Defaults to 20.
+            max_action_attempts_per_step (Optional[int], optional): Max actions to take on a single page. Defaults to 5.
+            viewport_width (int, optional): Viewport width in pixels. Defaults to 1280.
+            viewport_height (int, optional): Viewport height in pixels. Defaults to 720.
+            variables (Optional[ScrapeVariables], optional): Variables to use in the scrape, e.g. for filling in a username and password to log in. Defaults to None.
+            files (Optional[ScrapeFiles], optional): Files to use in the scrape, e.g. for uploading some data as part of the goal. Defaults to None.
+            scrape_id (Optional[UUID], optional): Scrape ID. Defaults to None.
+            file_client (Optional[FileClient], optional): File client to use for saving images, html, and traces. Defaults to None.
+            save_playwright_trace (bool, optional): Whether to save the playwright trace, see https://playwright.dev/python/docs/trace-viewer-intro for more information. You must provide a file_client to use this option. Defaults to False.
+            http_client (Optional[httpx.AsyncClient], optional): Http client to use for making requests, pass one through to reuse across tests. Defaults to None.
+            subscriptions (Optional[set[asyncio.Queue[ExecutorMessage]], optional): Subscriptions that will receive messages from the executor as it progresses. Defaults to None.
+            headless (bool, optional): Whether to run the browser in headless mode, if False a chromium browswer will display the actions of the test in real time. Defaults to True.
+        """
+
         super().__init__(subscriptions)
         if file_client is None and save_playwright_trace:
             raise ValueError(
@@ -445,13 +507,17 @@ class ScrapeExecutor(ExecutorBase):
         self.file_client = file_client
         self.save_playwright_trace = save_playwright_trace
 
-        self.model_client = model_client
+        self.http_client = http_client
 
         self.headless = headless
 
         self.previous_steps: list[str] = []
 
     async def run(self) -> None:
+        """
+        Runs the test until the high level goal is completed or it errors out
+        """
+
         logger.info(
             "Starting to test %s with goal %s", self.url, self.high_level_goal
         )
@@ -467,13 +533,13 @@ class ScrapeExecutor(ExecutorBase):
                 await context.tracing.start(screenshots=True, snapshots=True)
             page = await context.new_page()
 
-            if self.model_client is None:
-                model_client = httpx.AsyncClient()
+            if self.http_client is None:
+                http_client = httpx.AsyncClient()
             else:
-                model_client = self.model_client
+                http_client = self.http_client
 
             try:
-                await self._execute(page, model_client)
+                await self._execute(page, http_client)
             finally:
                 # cleanup trace
                 if self.save_playwright_trace:
@@ -492,8 +558,8 @@ class ScrapeExecutor(ExecutorBase):
                 await browser.close()
 
                 # cleanup model client
-                if self.model_client is None:
-                    await model_client.aclose()
+                if self.http_client is None:
+                    await http_client.aclose()
 
         logger.info(
             "Test %s with goal %s completed", self.url, self.high_level_goal
@@ -517,7 +583,7 @@ class ScrapeExecutor(ExecutorBase):
         return max_action_attempts
 
     async def _execute(
-        self, page: Page, model_client: httpx.AsyncClient
+        self, page: Page, http_client: httpx.AsyncClient
     ) -> None:
         done = False
         await page.goto(self.url)
@@ -552,7 +618,7 @@ class ScrapeExecutor(ExecutorBase):
                 subscriptions=self.subscriptions,
                 file_client=self.file_client,
                 scrape_id=self.scrape_id,
-                model_client=model_client,
+                http_client=http_client,
             )
             try:
                 done = await step_executor.run()
