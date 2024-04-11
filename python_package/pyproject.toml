@@ -6,7 +6,7 @@ authors = [
 ]
 description = "A package for automatically testing the UX / UI of a website."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
@@ -21,7 +21,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cli = ["typer"]
 local = ["aiofiles"]
+
+[project.scripts]
+betatester = "betatester.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/pateli18/betatester"

@@ -37,7 +37,7 @@ from .prompts import (
     create_next_step_system_prompt,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("betatester")
 
 ALLOWED_TAG_SET = set(["id", "for", "type", "allow"])
 
@@ -133,9 +133,11 @@ class ScrapeStepExecutor(ExecutorBase):
     async def _take_screenshot(self) -> str:
         screenshot_bytes = await self.page.screenshot(full_page=True)
         if self.file_client is not None:
-            logger.info("Saving screenshot")
-            await self.file_client.save_img(
+            path = await self.file_client.save_img(
                 self.scrape_id, self.step_id, screenshot_bytes
+            )
+            logger.info(
+                "Saved screenshot for step %s to %s", self.step_id, path
             )
         # base64 encode the screenshot
         screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
@@ -149,13 +151,19 @@ class ScrapeStepExecutor(ExecutorBase):
         _strip_attributes_except_allowed_set(clean_html)
         clean_html = str(clean_html)
         if self.file_client is not None:
-            await asyncio.gather(
+            full_path, clean_path = await asyncio.gather(
                 self.file_client.save_html(
                     self.scrape_id, self.step_id, html_content, HtmlType.full
                 ),
                 self.file_client.save_html(
                     self.scrape_id, self.step_id, clean_html, HtmlType.clean
                 ),
+            )
+            logger.info(
+                "Saved full html for step %s to %s", self.step_id, full_path
+            )
+            logger.info(
+                "Saved clean html for step %s to %s", self.step_id, clean_path
             )
 
         html_mrkdown = f"```html\n{clean_html}\n```"
@@ -193,6 +201,7 @@ class ScrapeStepExecutor(ExecutorBase):
                         next_step=next_instruction,
                     )
                 )
+        logger.info("\x1b[1;34mNext instruction\x1b[0m: %s", next_instruction)
         self.next_step_chat.append(
             ModelChat(
                 role=ModelChatType.assistant,
@@ -237,6 +246,7 @@ class ScrapeStepExecutor(ExecutorBase):
         )
 
         action = Action(**json.loads(action_raw))
+        logger.info("%s. Chose action: %s", self.actions_count, action)
 
         return action
 
@@ -319,6 +329,7 @@ class ScrapeStepExecutor(ExecutorBase):
                 await self._execute_action(action)
                 break
             except TimeoutError:
+                logger.info("Action timed out, retrying action %s", action)
                 self.choose_action_chat.append(
                     ModelChat(
                         role=ModelChatType.user,
@@ -327,6 +338,10 @@ class ScrapeStepExecutor(ExecutorBase):
                 )
             except Exception as e:
                 if "is not a valid selector" in str(e):
+                    logger.info(
+                        "Invalid selector, retrying action %s",
+                        action,
+                    )
                     self.choose_action_chat.append(
                         ModelChat(
                             role=ModelChatType.user,
@@ -334,6 +349,10 @@ class ScrapeStepExecutor(ExecutorBase):
                         )
                     )
                 elif "strict mode violation" in str(e):
+                    logger.info(
+                        "Locator resolved to more than one element, retrying action %s",
+                        action,
+                    )
                     self.choose_action_chat.append(
                         ModelChat(
                             role=ModelChatType.user,
@@ -365,9 +384,11 @@ class ScrapeStepExecutor(ExecutorBase):
             )
             html = await html_coro
             if "DONE" in self.next_instruction:
+                logger.info("Scrape completed")
                 # stop the html coroutine if we are done
                 return True
             elif "WAIT" in self.next_instruction:
+                logger.info("Waiting for next step, skipping action")
                 return False
 
             await self._choose_and_execute_action(
@@ -397,6 +418,7 @@ class ScrapeExecutor(ExecutorBase):
         save_playwright_trace: bool = True,
         model_client: Optional[httpx.AsyncClient] = None,
         subscriptions: Optional[set[asyncio.Queue[ExecutorMessage]]] = None,
+        headless: bool = True,
     ) -> None:
         super().__init__(subscriptions)
         if file_client is None and save_playwright_trace:
@@ -425,16 +447,23 @@ class ScrapeExecutor(ExecutorBase):
 
         self.model_client = model_client
 
+        self.headless = headless
+
         self.previous_steps: list[str] = []
 
     async def run(self) -> None:
+        logger.info(
+            "Starting to test %s with goal %s", self.url, self.high_level_goal
+        )
+        logger.info("===============================================")
         async with async_playwright() as p:
             # initial setup and navigation
-            browser = await p.chromium.launch()
+            browser = await p.chromium.launch(headless=self.headless)
             context = await browser.new_context(
                 viewport=self.viewport,
             )
             if self.save_playwright_trace:
+                logger.info("Starting playwright tracing...")
                 await context.tracing.start(screenshots=True, snapshots=True)
             page = await context.new_page()
 
@@ -452,9 +481,10 @@ class ScrapeExecutor(ExecutorBase):
                     output_path = f"{trace_tempdir.name}/{self.scrape_id}.zip"
                     await context.tracing.stop(path=output_path)
                     if self.file_client is not None:
-                        await self.file_client.save_trace(
+                        save_path = await self.file_client.save_trace(
                             self.scrape_id, output_path
                         )
+                        logger.info("Saved trace to %s", save_path)
                     trace_tempdir.cleanup()
 
                 # cleanup playwright
@@ -464,6 +494,13 @@ class ScrapeExecutor(ExecutorBase):
                 # cleanup model client
                 if self.model_client is None:
                     await model_client.aclose()
+
+        logger.info(
+            "Test %s with goal %s completed", self.url, self.high_level_goal
+        )
+        logger.info(
+            "=============================================================="
+        )
 
     @property
     def max_action_attempts(self) -> Optional[int]:
@@ -484,6 +521,7 @@ class ScrapeExecutor(ExecutorBase):
     ) -> None:
         done = False
         await page.goto(self.url)
+        logger.info("Navigated to %s", self.url)
         while True:
             if (
                 self.max_page_views is not None
@@ -501,6 +539,8 @@ class ScrapeExecutor(ExecutorBase):
                 )
             )
 
+            logger.info("Starting scrape step %s", self.scrape_page_view_count)
+            logger.info("---------------------------------")
             step_executor = ScrapeStepExecutor(
                 high_level_goal=self.high_level_goal,
                 previous_steps=self.previous_steps,
@@ -517,10 +557,21 @@ class ScrapeExecutor(ExecutorBase):
             try:
                 done = await step_executor.run()
             except MaxActionAttemptsReachedException as e:
-                logger.warning(e)
+                logger.warning(
+                    "Max action attempts (%s) for step %s reached: %s",
+                    self.max_action_attempts,
+                    self.scrape_page_view_count,
+                    str(e),
+                )
             if step_executor.next_instruction is not None:
                 self.previous_steps.append(step_executor.next_instruction)
             self.scrape_action_count += step_executor.actions_count
+            logger.info(
+                "Scrape step %s completed, total number of actions across scrape: %s",
+                self.scrape_page_view_count,
+                self.scrape_action_count,
+            )
+            logger.info("---------------------------------")
 
             if done:
                 break

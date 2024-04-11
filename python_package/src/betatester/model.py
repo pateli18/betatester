@@ -6,7 +6,7 @@ import httpx
 
 from .betatester_types import OpenAiChatInput
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("betatester")
 
 TIMEOUT = 30
 
@@ -107,6 +107,5 @@ async def openai_stream_response_generator(
             yield {"func_call": func_call}
 
     except Exception as e:
-        logger.exception("Error in openai_stream_response_generator")
-        error_message = str(e)
+        logger.error("Error in openai_stream_response_generator %s", str(e))
         yield {"error": error_message}
