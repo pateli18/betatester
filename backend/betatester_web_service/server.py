@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     await model_client.aclose()
 
 
-app = FastAPI(lifespan=lifespan, title="Betateser", version="0.0.0")
+app = FastAPI(lifespan=lifespan, title="BetaTester", version="0.0.0")
 app.include_router(scraper.router, prefix="/api/v1")
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(data.router)

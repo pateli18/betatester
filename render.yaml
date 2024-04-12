@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: betatester
+    plan: free
+    runtime: docker
+    repo: https://github.com/pateli18/betatester
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    buildFilter:
+      ignoredPaths:
+        - .vscode/**
+        - docker-compose*
+    envVars:
+      - key: BASE_URL
+        fromService:
+          name: betatester
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: POSTGRES_URI
+        fromDatabase:
+          name: betatesterdb
+          property: connectionString
+      - key: WEB_CONCURRENCY
+        value: 1
+      - key: ENVIRONMENT
+        value: prod
+      - key: PROCESSING_DEBUG
+        value: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: FILE_CLIENT_TYPE
+        value: local
+      - key: FILE_CLIENT_CONFIG
+        value: '{"save_path": "/app-data/"}'
+      - key: LOG_LEVEL
+        value: INFO
+databases:
+  - name: betatesterdb
+    postgresMajorVersion: "15"
+    plan: free

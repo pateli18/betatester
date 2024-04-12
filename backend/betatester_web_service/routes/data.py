@@ -12,6 +12,7 @@ router = APIRouter(
     prefix="/data",
     tags=["data"],
     responses={404: {"description": "Not found"}},
+    include_in_schema=False,
 )
 
 

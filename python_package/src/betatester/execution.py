@@ -743,10 +743,11 @@ class ScrapeSpecExecutor(_ScrapeExecutorBase):
 
         Examples:
             ```python
-            # load scrape spec json from wherever it was saved
-            with open("scrape_spec.json", "r") as f:
-                scrape_spec = ScrapeSpec.model_validate_json(f.read())
+            from betatester import ScrapeSpecExecutor
+            from betatester.file.local import LocalFileClient
 
+            file_client = LocalFileClient("...")
+            scrape_spec = file_client.load_scrape_spec("/path/to/scrape_spec.json")
 
             scrape_spec_executor = ScrapeSpecExecutor(
                 scrape_spec=scrape_spec,

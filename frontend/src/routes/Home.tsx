@@ -142,7 +142,7 @@ export const HomeRoute = () => {
   useEffect(() => {
     getAllConfigs().then((data) => {
       if (data === null) {
-        toast.error("Failed to fetch services");
+        toast.error("Failed to fetch tests");
       } else {
         setConfigMetadata(data);
       }
