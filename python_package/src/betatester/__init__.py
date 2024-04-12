@@ -1,6 +1,6 @@
-from .execution import ScrapeExecutor, ScrapeStepExecutor
+from .execution import ScrapeAiExecutor, ScrapeStepAiExecutor
 
 __all__ = [
-    "ScrapeExecutor",
-    "ScrapeStepExecutor",
+    "ScrapeAiExecutor",
+    "ScrapeStepAiExecutor",
 ]

@@ -12,7 +12,7 @@ from betatester.betatester_types import (
 )
 from pydantic import BaseModel, Field, computed_field
 
-from betatester import ScrapeExecutor
+from betatester import ScrapeAiExecutor
 from betatester_web_service.utils import model_client, settings
 
 
@@ -34,8 +34,8 @@ class TestConfig(ConfigBase):
 
     def scrape_executor(
         self, scrape_id: UUID, file_client: FileClient
-    ) -> ScrapeExecutor:
-        return ScrapeExecutor(
+    ) -> ScrapeAiExecutor:
+        return ScrapeAiExecutor(
             scrape_id=scrape_id,
             url=self.url,
             high_level_goal=self.high_level_goal,

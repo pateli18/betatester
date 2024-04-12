@@ -7,6 +7,11 @@ from uuid import UUID
 from pydantic import BaseModel, model_serializer
 
 
+class SpecialInstruction(str, Enum):
+    WAIT = "WAIT"
+    DONE = "DONE"
+
+
 class ModelChatType(str, Enum):
     system = "system"
     user = "user"
@@ -216,6 +221,18 @@ class Action(BaseModel):
         return output
 
 
+ScrapeEvent = Union[Action, SpecialInstruction]
+
+
+class ScrapeSpec(BaseModel):
+    url: str
+    scrape_events: list[ScrapeEvent]
+    variables: ScrapeVariables
+    files: ScrapeFiles
+    viewport_width: int
+    viewport_height: int
+
+
 class ExecutorMessage(BaseModel):
     step_id: Optional[UUID] = None
     scrape_page_view_count: Optional[int] = None
@@ -247,6 +264,14 @@ class FileClient:
 
     @abstractmethod
     async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def save_scrape_spec(self, scrape_id: UUID, spec: ScrapeSpec) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def load_scrape_spec(self, path: str) -> ScrapeSpec:
         raise NotImplementedError()
 
     @abstractmethod

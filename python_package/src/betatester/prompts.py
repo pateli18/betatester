@@ -5,6 +5,7 @@ from .betatester_types import (
     ModelFunction,
     ScrapeFiles,
     ScrapeVariables,
+    SpecialInstruction,
     Tool,
     ToolChoiceFunction,
     ToolChoiceObject,
@@ -31,8 +32,8 @@ def create_next_step_system_prompt(
 - You should provide the next step (e.g. click a specific button, fill a specific form, etc.) to accomplish the HIGH_LEVEL_GOAL given the PREVIOUS_STEPS
 - Only provide one step at a time
 - Avoid proposing steps that have already been proposed in the PREVIOUS_STEPS unless you have a good reason to do so
-- If the page has not been loaded, return WAIT
-- If the HIGH_LEVEL_GOAL has been accomplished, return DONE
+- If the page has not been loaded, return {SpecialInstruction.WAIT.value}
+- If the HIGH_LEVEL_GOAL has been accomplished, return {SpecialInstruction.DONE.value}
     - Only return DONE if the screen you are looking at indicates the goal is complete
 
 HIGH_LEVEL_GOAL: {high_level_goal}

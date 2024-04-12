@@ -4,11 +4,12 @@ import json
 import logging
 import re
 import tempfile
-from typing import Any, Optional
+from abc import abstractmethod
+from typing import Any, Optional, Union, cast
 from uuid import UUID, uuid4
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from playwright.async_api import (
     Page,
     TimeoutError,
@@ -26,8 +27,11 @@ from .betatester_types import (
     ModelChatType,
     ModelType,
     OpenAiChatInput,
+    ScrapeEvent,
     ScrapeFiles,
+    ScrapeSpec,
     ScrapeVariables,
+    SpecialInstruction,
 )
 from .model import openai_stream_response_generator, send_openai_request
 from .prompts import (
@@ -39,7 +43,7 @@ from .prompts import (
 
 logger = logging.getLogger("betatester")
 
-ALLOWED_TAG_SET = set(["id", "for", "type", "allow"])
+ALLOWED_TAG_SET = set(["id", "for", "type", "allow", "aria-label"])
 
 
 class ActionNotFoundException(Exception):
@@ -58,13 +62,69 @@ class MaxTotalActionsReachedException(Exception):
     pass
 
 
-class MaxActionAttemptsReachedException(Exception):
-    pass
+async def _execute_action(
+    page: Page,
+    action: Action,
+    variables: ScrapeVariables,
+    files: ScrapeFiles,
+):
+    # strip non space and alphanumeric characters from the element name
+    if action.element.selector is not None:
+        element = page.locator(f"{action.element.selector}")
+    elif action.element.role is not None:
+        kwargs: dict[str, Union[str, re.Pattern]] = {
+            "role": action.element.role
+        }
+        if action.element.name is not None:
+            kwargs["name"] = re.compile(
+                "".join(
+                    char
+                    for char in action.element.name
+                    if char.isalnum() or char.isspace()
+                ).strip(),
+                re.IGNORECASE,
+            )
+        element = page.get_by_role(**kwargs)  # type: ignore
+    else:
+        raise ActionNotFoundException("Action requires either an id or a role")
+
+    action_kwargs: dict[str, Any] = {"timeout": 10000}
+    if action.action_type == ActionType.click:
+        await element.click(**action_kwargs)
+    elif action.action_type == ActionType.fill:
+        if action.action_value is None:
+            raise ActionNotFoundException(
+                "Action type 'fill' requires an action_value"
+            )
+        action_value = variables.get(action.action_value, action.action_value)
+        await element.fill(action_value, **action_kwargs)
+    elif action.action_type == ActionType.select:
+        await element.select_option(action.action_value, **action_kwargs)
+    elif action.action_type == ActionType.check:
+        await element.check(**action_kwargs)
+    elif action.action_type == ActionType.upload_file:
+        if action.action_value is None:
+            raise ActionNotFoundException(
+                "Action type 'upload' requires an action_value and files"
+            )
+        file = files.get(action.action_value)
+        if file is None:
+            raise ActionNotFoundException(
+                f"Action value {action.action_value} not found in files"
+            )
+
+        await element.set_input_files(file.input_files)  # type: ignore
+    elif action.action_type == ActionType.none:
+        pass
+    else:
+        raise ActionNotFoundException(
+            f"Action type {action.action_type} not found"
+        )
 
 
 # Function to strip attributes except for 'id'
-def _strip_attributes_except_allowed_set(element):
-    for tag in element.find_all(True):  # True finds all tags
+def _strip_attributes_except_allowed_set(element: Tag):
+    for tag in element.find_all(True) + [element]:
         attrs = dict(
             tag.attrs
         )  # Make a copy to avoid changing size during iteration
@@ -73,7 +133,15 @@ def _strip_attributes_except_allowed_set(element):
                 del tag.attrs[attr]
 
 
-class ExecutorBase:
+def _strip_all_script_and_style_tags(element: Tag):
+    for tag in element.find_all("script"):
+        tag.decompose()
+
+    for tag in element.find_all("style"):
+        tag.decompose()
+
+
+class _AiExecutorBase:
     def __init__(
         self,
         subscriptions: Optional[set[asyncio.Queue[ExecutorMessage]]] = None,
@@ -87,7 +155,89 @@ class ExecutorBase:
             queue.put_nowait(message)
 
 
-class ScrapeStepExecutor(ExecutorBase):
+class _ScrapeExecutorBase:
+    def __init__(
+        self,
+        url: str,
+        viewport_width: int,
+        viewport_height: int,
+        file_client: Optional[FileClient] = None,
+        scrape_id: Optional[UUID] = None,
+        save_playwright_trace: bool = False,
+        headless: bool = True,
+    ) -> None:
+        if file_client is None and save_playwright_trace:
+            raise ValueError(
+                "file_client must be provided when save_playwright_trace is True"
+            )
+        self.scrape_id = scrape_id or uuid4()
+        self.url = url
+        self.file_client = file_client
+        self.viewport = ViewportSize(
+            width=viewport_width, height=viewport_height
+        )
+
+        self.headless = headless
+        self.save_playwright_trace = save_playwright_trace
+
+    @abstractmethod
+    async def _execute(self, page: Page) -> None:
+        pass
+
+    async def _run_start_callback(self) -> None:
+        pass
+
+    async def _run_end_callback(self) -> None:
+        pass
+
+    async def run(self) -> None:
+        """
+        Runs the test until the high level goal is completed or it errors out
+        """
+
+        logger.info("Starting to test %s", self.url)
+        logger.info("===============================================")
+        async with async_playwright() as p:
+            # initial setup and navigation
+            browser = await p.chromium.launch(headless=self.headless)
+            context = await browser.new_context(
+                viewport=self.viewport,
+            )
+            if self.save_playwright_trace:
+                logger.info("Starting playwright tracing...")
+                await context.tracing.start(screenshots=True, snapshots=True)
+            page = await context.new_page()
+
+            await self._run_start_callback()
+
+            try:
+                await self._execute(page)
+            finally:
+                # cleanup trace
+                if self.save_playwright_trace:
+                    trace_tempdir = tempfile.TemporaryDirectory()
+                    output_path = f"{trace_tempdir.name}/{self.scrape_id}.zip"
+                    await context.tracing.stop(path=output_path)
+                    if self.file_client is not None:
+                        save_path = await self.file_client.save_trace(
+                            self.scrape_id, output_path
+                        )
+                        logger.info("Saved trace to %s", save_path)
+                    trace_tempdir.cleanup()
+
+                # cleanup playwright
+                await context.close()
+                await browser.close()
+
+                await self._run_end_callback()
+
+        logger.info("Test %s completed", self.url)
+        logger.info(
+            "=============================================================="
+        )
+
+
+class ScrapeStepAiExecutor(_AiExecutorBase):
     def __init__(
         self,
         high_level_goal: str,
@@ -108,7 +258,7 @@ class ScrapeStepExecutor(ExecutorBase):
 
         Examples:
             ```python
-            scrape_step_executor = ScrapeStepExecutor(
+            scrape_step_executor = ScrapeStepAiExecutor(
                 high_level_goal="Find images of cats",
                 previous_steps=["Navigate to google.com"],
                 page=page,
@@ -158,17 +308,13 @@ class ScrapeStepExecutor(ExecutorBase):
 
         self.http_client = http_client
 
-        self.next_instruction: Optional[str] = None
-
     async def _take_screenshot(self) -> str:
         screenshot_bytes = await self.page.screenshot(full_page=True)
         if self.file_client is not None:
             path = await self.file_client.save_img(
                 self.scrape_id, self.step_id, screenshot_bytes
             )
-            logger.info(
-                "Saved screenshot for step %s to %s", self.step_id, path
-            )
+            logger.info("Saved screenshot to %s", path)
         # base64 encode the screenshot
         screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
         return screenshot_b64
@@ -177,7 +323,8 @@ class ScrapeStepExecutor(ExecutorBase):
         html_content = await self.page.content()
         soup = BeautifulSoup(html_content, "lxml")
         # get body tag
-        clean_html = soup.find("body")
+        clean_html = cast(Tag, soup.find("body"))
+        _strip_all_script_and_style_tags(clean_html)
         _strip_attributes_except_allowed_set(clean_html)
         clean_html = str(clean_html)
         if self.file_client is not None:
@@ -189,12 +336,8 @@ class ScrapeStepExecutor(ExecutorBase):
                     self.scrape_id, self.step_id, clean_html, HtmlType.clean
                 ),
             )
-            logger.info(
-                "Saved full html for step %s to %s", self.step_id, full_path
-            )
-            logger.info(
-                "Saved clean html for step %s to %s", self.step_id, clean_path
-            )
+            logger.info("Saved full html to %s", full_path)
+            logger.info("Saved clean html to %s", clean_path)
 
         html_mrkdown = f"```html\n{clean_html}\n```"
 
@@ -280,65 +423,12 @@ class ScrapeStepExecutor(ExecutorBase):
 
         return action
 
-    async def _execute_action(
-        self,
-        action: Action,
-    ):
-        # strip non space and alphanumeric characters from the element name
-        if action.element.selector is not None:
-            element = self.page.locator(f"{action.element.selector}")
-        elif (
-            action.element.role is not None and action.element.name is not None
-        ):
-            element_name = "".join(
-                char
-                for char in action.element.name
-                if char.isalnum() or char.isspace()
-            ).strip()
-            element = self.page.get_by_role(action.element.role, name=re.compile(element_name, re.IGNORECASE))  # type: ignore
-        else:
-            raise ActionNotFoundException(
-                "Action requires either an id or both a role and name"
-            )
-
-        action_kwargs: dict[str, Any] = {"timeout": 10000}
-        if action.action_type == ActionType.click:
-            await element.click(**action_kwargs)
-        elif action.action_type == ActionType.fill:
-            if action.action_value is None:
-                raise ActionNotFoundException(
-                    "Action type 'fill' requires an action_value"
-                )
-            action_value = self.variables.get(
-                action.action_value, action.action_value
-            )
-            await element.fill(action_value, **action_kwargs)
-        elif action.action_type == ActionType.select:
-            await element.select_option(action.action_value, **action_kwargs)
-        elif action.action_type == ActionType.check:
-            await element.check(**action_kwargs)
-        elif action.action_type == ActionType.upload_file:
-            if action.action_value is None:
-                raise ActionNotFoundException(
-                    "Action type 'upload' requires an action_value and files"
-                )
-            file = self.files.get(action.action_value)
-            if file is None:
-                raise ActionNotFoundException(
-                    f"Action value {action.action_value} not found in files"
-                )
-
-            await element.set_input_files(file.input_files)  # type: ignore
-        elif action.action_type == ActionType.none:
-            pass
-        else:
-            raise ActionNotFoundException(
-                f"Action type {action.action_type} not found"
-            )
-
     async def _choose_and_execute_action(
-        self, next_instruction: str, html: str, http_client: httpx.AsyncClient
-    ) -> None:
+        self,
+        next_instruction: str,
+        html: str,
+        http_client: httpx.AsyncClient,
+    ) -> tuple[Optional[Action], int]:
         self.choose_action_chat.append(
             create_choose_action_user_message(next_instruction, html)
         )
@@ -356,7 +446,9 @@ class ScrapeStepExecutor(ExecutorBase):
             )
 
             try:
-                await self._execute_action(action)
+                await _execute_action(
+                    self.page, action, self.variables, self.files
+                )
                 break
             except TimeoutError:
                 logger.info("Action timed out, retrying action %s", action)
@@ -396,41 +488,42 @@ class ScrapeStepExecutor(ExecutorBase):
                 self.max_action_attempts is not None
                 and self.actions_count >= self.max_action_attempts
             ):
-                raise MaxActionAttemptsReachedException(
-                    f"Max action attempts ({self.actions_count}) reached"
+                logger.warning(
+                    "Max action attempts (%s) reached",
+                    self.max_action_attempts,
                 )
+                return None, self.actions_count
 
-    async def run(self) -> bool:
+        return action, self.actions_count
+
+    async def run(self) -> tuple[Optional[str], Optional[Action], int]:
         if self.http_client is None:
             http_client = httpx.AsyncClient()
         else:
             http_client = self.http_client
 
+        next_instruction = None
+        action = None
         try:
             encoded_image = await self._take_screenshot()
             html_coro = self._get_html()
-            self.next_instruction = await self._get_next_step(
+            next_instruction = await self._get_next_step(
                 encoded_image, http_client
             )
             html = await html_coro
-            if "DONE" in self.next_instruction:
-                logger.info("Scrape completed")
-                # stop the html coroutine if we are done
-                return True
-            elif "WAIT" in self.next_instruction:
-                logger.info("Waiting for next step, skipping action")
-                return False
+            if "DONE" in next_instruction or "WAIT" in next_instruction:
+                return next_instruction, None, 0
 
-            await self._choose_and_execute_action(
-                self.next_instruction, html, http_client
+            action, action_count = await self._choose_and_execute_action(
+                next_instruction, html, http_client
             )
         finally:
             if self.http_client is None:
                 await http_client.aclose()
-        return False
+        return next_instruction, action, action_count
 
 
-class ScrapeExecutor(ExecutorBase):
+class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
     def __init__(
         self,
         url: str,
@@ -455,7 +548,7 @@ class ScrapeExecutor(ExecutorBase):
 
         Examples:
             ```python
-            scrape_executor = ScrapeExecutor(
+            scrape_executor = ScrapeAiExecutor(
                 url="https://google.com",
                 high_level_goal="Find images of cats",
                 openai_api_key="...",
@@ -481,92 +574,61 @@ class ScrapeExecutor(ExecutorBase):
             subscriptions (Optional[set[asyncio.Queue[ExecutorMessage]], optional): Subscriptions that will receive messages from the executor as it progresses. Defaults to None.
             headless (bool, optional): Whether to run the browser in headless mode, if False a chromium browswer will display the actions of the test in real time. Defaults to True.
         """
-
-        super().__init__(subscriptions)
-        if file_client is None and save_playwright_trace:
-            raise ValueError(
-                "file_client must be provided when save_playwright_trace is True"
-            )
-
-        self.scrape_id = scrape_id or uuid4()
-        self.url = url
+        _ScrapeExecutorBase.__init__(
+            self,
+            url=url,
+            viewport_width=viewport_width,
+            viewport_height=viewport_height,
+            file_client=file_client,
+            scrape_id=scrape_id,
+            save_playwright_trace=save_playwright_trace,
+            headless=headless,
+        )
+        _AiExecutorBase.__init__(self, subscriptions=subscriptions)
         self.high_level_goal = high_level_goal
         self._openai_api_key = openai_api_key
         self.max_page_views = max_page_views
         self.max_total_actions = max_total_actions
         self.max_action_attempts_per_step = max_action_attempts_per_step
-        self.viewport = ViewportSize(
-            width=viewport_width, height=viewport_height
-        )
         self.variables = variables or {}
         self.files = files or {}
 
         self.scrape_page_view_count = 0
         self.scrape_action_count = 0
 
-        self.file_client = file_client
-        self.save_playwright_trace = save_playwright_trace
-
         self.http_client = http_client
-
-        self.headless = headless
+        self.close_http_client = http_client is None
 
         self.previous_steps: list[str] = []
 
-    async def run(self) -> None:
-        """
-        Runs the test until the high level goal is completed or it errors out
-        """
+        self.scrape_events: list[ScrapeEvent] = []
 
-        logger.info(
-            "Starting to test %s with goal %s", self.url, self.high_level_goal
-        )
-        logger.info("===============================================")
-        async with async_playwright() as p:
-            # initial setup and navigation
-            browser = await p.chromium.launch(headless=self.headless)
-            context = await browser.new_context(
-                viewport=self.viewport,
+    async def _run_start_callback(self) -> None:
+        if self.http_client is None:
+            self.http_client = httpx.AsyncClient()
+
+    async def _run_end_callback(self) -> None:
+        # save scrape spec
+        if self.file_client is not None:
+            spec = ScrapeSpec(
+                url=self.url,
+                scrape_events=self.scrape_events,
+                variables=self.variables,
+                files=self.files,
+                viewport_height=self.viewport["height"],
+                viewport_width=self.viewport["width"],
             )
-            if self.save_playwright_trace:
-                logger.info("Starting playwright tracing...")
-                await context.tracing.start(screenshots=True, snapshots=True)
-            page = await context.new_page()
+            spec_save_path = await self.file_client.save_scrape_spec(
+                self.scrape_id, spec
+            )
+            logger.info(
+                "Saved scrape spec to %s",
+                spec_save_path,
+            )
 
-            if self.http_client is None:
-                http_client = httpx.AsyncClient()
-            else:
-                http_client = self.http_client
-
-            try:
-                await self._execute(page, http_client)
-            finally:
-                # cleanup trace
-                if self.save_playwright_trace:
-                    trace_tempdir = tempfile.TemporaryDirectory()
-                    output_path = f"{trace_tempdir.name}/{self.scrape_id}.zip"
-                    await context.tracing.stop(path=output_path)
-                    if self.file_client is not None:
-                        save_path = await self.file_client.save_trace(
-                            self.scrape_id, output_path
-                        )
-                        logger.info("Saved trace to %s", save_path)
-                    trace_tempdir.cleanup()
-
-                # cleanup playwright
-                await context.close()
-                await browser.close()
-
-                # cleanup model client
-                if self.http_client is None:
-                    await http_client.aclose()
-
-        logger.info(
-            "Test %s with goal %s completed", self.url, self.high_level_goal
-        )
-        logger.info(
-            "=============================================================="
-        )
+        # cleanup model client
+        if self.close_http_client and self.http_client is not None:
+            await self.http_client.aclose()
 
     @property
     def max_action_attempts(self) -> Optional[int]:
@@ -582,21 +644,13 @@ class ScrapeExecutor(ExecutorBase):
 
         return max_action_attempts
 
-    async def _execute(
-        self, page: Page, http_client: httpx.AsyncClient
-    ) -> None:
-        done = False
+    async def _execute(self, page: Page) -> None:
+        logger.info(
+            "\x1b[1;34mHigh Level Goal\x1b[0m: %s", self.high_level_goal
+        )
         await page.goto(self.url)
         logger.info("Navigated to %s", self.url)
         while True:
-            if (
-                self.max_page_views is not None
-                and self.scrape_page_view_count >= self.max_page_views
-            ):
-                raise MaxPageViewsReachedException(
-                    f"Max page views ({self.scrape_page_view_count}) reached"
-                )
-
             self.scrape_page_view_count += 1
             self.publish(
                 ExecutorMessage(
@@ -607,7 +661,9 @@ class ScrapeExecutor(ExecutorBase):
 
             logger.info("Starting scrape step %s", self.scrape_page_view_count)
             logger.info("---------------------------------")
-            step_executor = ScrapeStepExecutor(
+
+            # initialize scraper
+            step_executor = ScrapeStepAiExecutor(
                 high_level_goal=self.high_level_goal,
                 previous_steps=self.previous_steps,
                 page=page,
@@ -618,20 +674,25 @@ class ScrapeExecutor(ExecutorBase):
                 subscriptions=self.subscriptions,
                 file_client=self.file_client,
                 scrape_id=self.scrape_id,
-                http_client=http_client,
+                http_client=self.http_client,
             )
-            try:
-                done = await step_executor.run()
-            except MaxActionAttemptsReachedException as e:
-                logger.warning(
-                    "Max action attempts (%s) for step %s reached: %s",
-                    self.max_action_attempts,
-                    self.scrape_page_view_count,
-                    str(e),
-                )
-            if step_executor.next_instruction is not None:
-                self.previous_steps.append(step_executor.next_instruction)
-            self.scrape_action_count += step_executor.actions_count
+
+            # run the step
+            next_instruction, action, action_count = await step_executor.run()
+
+            # process next instruction
+            next_instruction_fmt = None
+            if next_instruction is not None:
+                self.previous_steps.append(next_instruction)
+                if "DONE" in next_instruction:
+                    logger.info("High level goal accomplished")
+                    next_instruction_fmt = SpecialInstruction.DONE
+                elif "WAIT" in next_instruction:
+                    logger.info("Waiting for page to load")
+                    next_instruction_fmt = SpecialInstruction.WAIT
+
+            # update action count
+            self.scrape_action_count += action_count
             logger.info(
                 "Scrape step %s completed, total number of actions across scrape: %s",
                 self.scrape_page_view_count,
@@ -639,9 +700,17 @@ class ScrapeExecutor(ExecutorBase):
             )
             logger.info("---------------------------------")
 
-            if done:
+            # update action history
+            if action is not None:
+                self.scrape_events.append(action)
+            if next_instruction_fmt is not None:
+                self.scrape_events.append(next_instruction_fmt)
+
+            # end test if high level goal is completed
+            if next_instruction_fmt == SpecialInstruction.DONE:
                 break
 
+            # check if max total actions reached
             if (
                 self.max_total_actions is not None
                 and self.scrape_action_count >= self.max_total_actions
@@ -649,3 +718,77 @@ class ScrapeExecutor(ExecutorBase):
                 raise MaxTotalActionsReachedException(
                     f"Max total actions ({self.scrape_action_count}) reached"
                 )
+
+            # check if max page views reached
+            if (
+                self.max_page_views is not None
+                and self.scrape_page_view_count >= self.max_page_views
+            ):
+                raise MaxPageViewsReachedException(
+                    f"Max page views ({self.scrape_page_view_count}) reached"
+                )
+
+
+class ScrapeSpecExecutor(_ScrapeExecutorBase):
+    def __init__(
+        self,
+        scrape_spec: ScrapeSpec,
+        scrape_id: Optional[UUID] = None,
+        file_client: Optional[FileClient] = None,
+        save_playwright_trace: bool = False,
+        headless: bool = True,
+    ) -> None:
+        """
+        Executes a test on a given URL from a previously saved scrape spec
+
+        Examples:
+            ```python
+            # load scrape spec json from wherever it was saved
+            with open("scrape_spec.json", "r") as f:
+                scrape_spec = ScrapeSpec.model_validate_json(f.read())
+
+
+            scrape_spec_executor = ScrapeSpecExecutor(
+                scrape_spec=scrape_spec,
+            )
+            await scrape_spec_executor.run()
+            ```
+
+        Args:
+            scrape_spec (ScrapeSpec): Scrape spec to execute, this will have been saved by a ScrapeAiExecutor run
+            scrape_id (Optional[UUID], optional): Scrape ID. Defaults to None.
+            file_client (Optional[FileClient], optional): File client to use for saving images, html, and traces. Defaults to None.
+            save_playwright_trace (bool, optional): Whether to save the playwright trace, see https://playwright.dev/python/docs/trace-viewer-int for more information. You must provide a file_client to use this option. Defaults to False.
+            headless (bool, optional): Whether to run the browser in headless mode, if False a chromium browswer will display the actions of the test in real time. Defaults to True.
+        """
+        _ScrapeExecutorBase.__init__(
+            self,
+            url=scrape_spec.url,
+            viewport_width=scrape_spec.viewport_width,
+            viewport_height=scrape_spec.viewport_height,
+            file_client=file_client,
+            scrape_id=scrape_id,
+            save_playwright_trace=save_playwright_trace,
+            headless=headless,
+        )
+        self.scrape_events = scrape_spec.scrape_events
+        self.variables = scrape_spec.variables
+        self.files = scrape_spec.files
+
+    async def _execute(self, page: Page) -> None:
+        await page.goto(self.url)
+        logger.info("Navigated to %s", self.url)
+        for scrape_event in self.scrape_events:
+            if isinstance(scrape_event, Action):
+                logger.info("Executing action: %s", scrape_event)
+                await _execute_action(
+                    page, scrape_event, self.variables, self.files
+                )
+            elif scrape_event == SpecialInstruction.DONE:
+                await page.wait_for_timeout(5000)
+                logger.info("High level goal accomplished")
+            elif scrape_event == SpecialInstruction.WAIT:
+                logger.info("Waiting 5 seconds for page to load")
+                await page.wait_for_timeout(5000)
+            else:
+                raise ValueError(f"Invalid scrape event: {scrape_event}")

@@ -20,7 +20,7 @@ from pydantic import BaseModel, validator
 from sqlalchemy.ext.asyncio import async_scoped_session
 from sse_starlette.sse import EventSourceResponse
 
-from betatester import ScrapeExecutor
+from betatester import ScrapeAiExecutor
 from betatester_web_service.betatester_web_service_types import (
     RunEventMetadata,
     RunMessage,
@@ -51,7 +51,7 @@ router = APIRouter(
 )
 
 
-async def _run_scraper(scraper: ScrapeExecutor, config_id: UUID):
+async def _run_scraper(scraper: ScrapeAiExecutor, config_id: UUID):
     item_key = f"{config_id}-{scraper.scrape_id}"
     async with scraper_info_cache_lock:
         scraper_info_cache[item_key] = RunMessage(
