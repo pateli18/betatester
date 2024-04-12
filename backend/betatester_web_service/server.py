@@ -49,10 +49,12 @@ if settings.environment != Environment.dev:
 
     @app.get("/", include_in_schema=False)
     async def index():
-        return FileResponse("./betatester/ui/index.html")
+        return FileResponse("./betatester_web_service/ui/index.html")
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz():
         return {"status": "ok"}
 
-    app.mount("/", StaticFiles(directory="./betatester/ui/"), name="ui")
+    app.mount(
+        "/", StaticFiles(directory="./betatester_web_service/ui/"), name="ui"
+    )

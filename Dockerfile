@@ -8,9 +8,9 @@ RUN playwright install --with-deps chromium
 
 COPY backend/requirements.txt /app/
 
-RUN pip install -r requirements.txt -t /usr/local/lib/python3.11/site-packages
-
 FROM backend-base as backend-dev
+
+RUN pip install -r requirements.txt -t /usr/local/lib/python3.11/site-packages
 
 RUN pip install watchfiles
 
@@ -22,13 +22,14 @@ COPY backend/betatester_web_service /app/betatester_web_service
 
 FROM backend-base as backend-prod
 
+RUN pip install -r requirements.txt
 RUN pip install betatester[local]
 
 COPY backend/betatester_web_service /app/betatester_web_service
 
 EXPOSE 8080
 
-CMD ["uvicorn", "betatester_web_service.server:app", "--host", "0.0.0.0"]
+CMD ["uvicorn", "betatester_web_service.server:app", "--host", "0.0.0.0", "--port", "8080"]
 
 FROM node:20.11.1-alpine3.18 as frontend
 
