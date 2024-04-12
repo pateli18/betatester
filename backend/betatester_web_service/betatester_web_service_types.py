@@ -20,13 +20,13 @@ class ConfigBase(BaseModel):
     url: str
     name: str
     high_level_goal: str
-    max_page_views: int
-    max_total_actions: int
-    max_action_attempts_per_step: int
-    viewport_width: int
-    viewport_height: int
-    variables: ScrapeVariables
-    files: ScrapeFiles
+    max_page_views: int = 10
+    max_total_actions: int = 20
+    max_action_attempts_per_step: int = 5
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    variables: ScrapeVariables = Field(default_factory=dict)
+    files: ScrapeFiles = Field(default_factory=dict)
 
 
 class TestConfig(ConfigBase):

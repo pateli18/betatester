@@ -60,7 +60,7 @@ from betatester import ScrapeSpecExecutor
 from betatester.file.local import LocalFileClient
 
 file_client = LocalFileClient("./app-data/")
-scrape_spec = file_client.load_scrape_spec("/path/to/scrape_spec.json")
+scrape_spec = await file_client.load_scrape_spec("/path/to/scrape_spec.json")
 
 scrape_spec_executor = ScrapeSpecExecutor(
     scrape_spec=scrape_spec,
@@ -120,7 +120,7 @@ FILE_CLIENT_CONFIG='{"save_path": "./app-data/"}' betatester start_spec --scrape
 docker compose -f docker-compose.prod.yaml up --build
 ```
 
-The application is served on [http://localhost:8000](http://localhost:8000)
+The application is served on [http://localhost:8080](http://localhost:8080)
 
 #### Run Development Environment Locally
 
@@ -134,7 +134,7 @@ The application is served on [http://localhost:8000](http://localhost:8000)
 docker compose -f docker-compose.dev.yaml up --build
 ```
 
-The backend is served on [http://localhost:8000](http://localhost:8000)
+The backend is served on [http://localhost:8080](http://localhost:8080)
 
 3. Install frontend packages (this only needs to be done once)
 
@@ -170,15 +170,15 @@ The frontend is served on [http://localhost:3000](http://localhost:3000)
 
 ### Using the API
 
-BetaTester provides a REST API for interacting with the application. The API is served on [http://localhost:8000](http://localhost:8000/api/v1). You can view the api docs at [http://localhost:8000/docs](http://localhost:8000/docs) when running the application locally.
+BetaTester provides a REST API for interacting with the application. The API is served on [http://localhost:8080](http://localhost:8080/api/v1). You can view the api docs at [http://localhost:8080/docs](http://localhost:8080/docs) when running the application locally.
 
-1. [Create a Test](http://localhost:8000/docs#/config/upsert_config_api_v1_config_upsert_post)
+1. [Create a Test](http://localhost:8080/docs#/config/upsert_config_api_v1_config_upsert_post)
 
 ```python
 import httpx
 
 response = httpx.post(
-    "http://localhost:8000/api/v1/config/upsert",
+    "http://localhost:8080/api/v1/config/upsert",
     json={
         "name": "Test Search",
         "url": "https://google.com",
@@ -189,19 +189,19 @@ config_id = response.json()["config_id"]
 print(config_id)
 ```
 
-2. [Start a Test](http://localhost:8000/docs#/scrape/start_scrape_api_v1_scrape_start__config__id_post)
+2. [Start a Test](http://localhost:8080/docs#/scrape/start_scrape_api_v1_scrape_start__config__id_post)
 
 ```python
 import httpx
 
 response = httpx.post(
-    f"http://localhost:8000/api/v1/scraper/start/{config_id}",
+    f"http://localhost:8080/api/v1/scraper/start/{config_id}",
 )
-run_id = response.json()["id"]
+run_id = response.json()["scrape_id"]
 print(run_id)
 ```
 
-3. [Poll for Status](http://localhost:8000/docs#/process/processing_status_api_v1_scraper_status__config_id___run_id__get)
+3. [Poll for Status](http://localhost:8080/docs#/process/processing_status_api_v1_scraper_status__config_id___run_id__get)
 
 ```python
 import httpx
@@ -209,7 +209,7 @@ from time import sleep
 
 while True:
     response = httpx.get(
-        f"http://localhost:8000/api/v1/scraper/status/{config_id}/{run_id}"
+        f"http://localhost:8080/api/v1/scraper/status/{config_id}/{run_id}"
     )
     status = response.json()["status"]
     print(status)

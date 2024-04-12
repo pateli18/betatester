@@ -57,7 +57,7 @@ from betatester import ScrapeSpecExecutor
 from betatester.file.local import LocalFileClient
 
 file_client = LocalFileClient("./app-data/")
-scrape_spec = file_client.load_scrape_spec("/path/to/scrape_spec.json")
+scrape_spec = await file_client.load_scrape_spec("/path/to/scrape_spec.json")
 
 scrape_spec_executor = ScrapeSpecExecutor(
     scrape_spec=scrape_spec,
