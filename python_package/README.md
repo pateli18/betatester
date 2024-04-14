@@ -1,6 +1,6 @@
 # BetaTester
 
-BetaTester is a simple tool to help you automatically test the UI / UX of your web application on different browsers and devices without having to right brittle front-end tests. It uses LLMs to plan and select actions and [Playwright](https://playwright.dev/) to execute those actions.
+BetaTester is a simple tool to help you automatically test the UI / UX of your web application on different browsers and devices without having to write brittle front-end tests. It uses LLMs to plan and select actions and [Playwright](https://playwright.dev/) to execute those actions.
 
 As you develop and change your web application, you can specify BetaTester to continuously test high level flows like "Sign up", "Login", "Add to cart", etc. Failures can indicate either a bug in the UI or potentially non-intuitive UX, which you can investigate further using the [application](#application) or the [Playwright trace](https://playwright.dev/python/docs/trace-viewer-intro) it automatically generates.
 
