@@ -37,27 +37,19 @@ Run the test using LLMs. See the docstring [here](./src/betatester/execution.py#
 
 ```python
 from betatester import ScrapeAiExecutor
-from betatester.file.local import LocalFileClient
-
-file_client = LocalFileClient("./app-data/")
 
 scrape_executor = ScrapeAiExecutor(
     url="https://google.com",
     high_level_goal="Find images of cats",
     openai_api_key="...",
-    file_client=file_client,
 )
-await scrape_executor.run()
+scrape_spec = await scrape_executor.run()
 ```
 
 Run the test using a scrape spec (with no LLM calls) generated from a previous LLM run. See the docstring [here](./src/betatester/execution.py#L758) for more information on the avaiable parameters.
 
 ```python
 from betatester import ScrapeSpecExecutor
-from betatester.file.local import LocalFileClient
-
-file_client = LocalFileClient("./app-data/")
-scrape_spec = await file_client.load_scrape_spec("/path/to/scrape_spec.json")
 
 scrape_spec_executor = ScrapeSpecExecutor(
     scrape_spec=scrape_spec,
@@ -88,13 +80,13 @@ playwright install --with-deps chromium`
 Run the test using LLMs. Use `betatester start_ai --help` for more information on the avaiable parameters.
 
 ```bash
-FILE_CLIENT_CONFIG='{"save_path": "./app-data/"}' betatester start_ai --url "https://google.com" --high-level-goal "Find images of cats" --file-client-type "local"
+betatester start_ai --url "https://google.com" --high-level-goal "Find images of cats"  > "/path/to/scrape_spec.json"
 ```
 
 Run the test using a scrape spec (with no LLM calls) generated from a previous LLM run. Use `betatester start_spec --help` for more information on the avaiable parameters.
 
 ```bash
-FILE_CLIENT_CONFIG='{"save_path": "./app-data/"}' betatester start_spec --scrape-spec-path "/path/to/scrape_spec.json" --file-client-type "local"
+betatester start_spec --scrape-spec-path "/path/to/scrape_spec.json"
 ```
 
 ## Extensions

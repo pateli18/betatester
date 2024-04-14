@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Literal, Optional, Union, cast
 from uuid import UUID
 
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, field_serializer, model_serializer
 
 
 class SpecialInstruction(str, Enum):
@@ -225,12 +225,18 @@ ScrapeEvent = Union[Action, SpecialInstruction]
 
 
 class ScrapeSpec(BaseModel):
+    original_scrape_id: UUID
     url: str
+    high_level_goal: str
     scrape_events: list[ScrapeEvent]
     variables: ScrapeVariables
     files: ScrapeFiles
     viewport_width: int
     viewport_height: int
+
+    @field_serializer("original_scrape_id", when_used="always")
+    def serialize_original_scrape_id(original_scrape_id: UUID) -> str:  # type: ignore
+        return str(original_scrape_id)
 
 
 class ExecutorMessage(BaseModel):
@@ -264,14 +270,6 @@ class FileClient:
 
     @abstractmethod
     async def save_trace(self, scrape_id: UUID, tmp_trace_path: str) -> str:
-        raise NotImplementedError()
-
-    @abstractmethod
-    async def save_scrape_spec(self, scrape_id: UUID, spec: ScrapeSpec) -> str:
-        raise NotImplementedError()
-
-    @abstractmethod
-    async def load_scrape_spec(self, path: str) -> ScrapeSpec:
         raise NotImplementedError()
 
     @abstractmethod

@@ -5,7 +5,7 @@ import logging
 import re
 import tempfile
 from abc import abstractmethod
-from typing import Any, Optional, Union, cast
+from typing import Any, Generic, Optional, TypeVar, Union, cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -155,10 +155,14 @@ class _AiExecutorBase:
             queue.put_nowait(message)
 
 
-class _ScrapeExecutorBase:
+T = TypeVar("T")
+
+
+class _ScrapeExecutorBase(Generic[T]):
     def __init__(
         self,
         url: str,
+        high_level_goal: str,
         viewport_width: int,
         viewport_height: int,
         file_client: Optional[FileClient] = None,
@@ -172,6 +176,7 @@ class _ScrapeExecutorBase:
             )
         self.scrape_id = scrape_id or uuid4()
         self.url = url
+        self.high_level_goal = high_level_goal
         self.file_client = file_client
         self.viewport = ViewportSize(
             width=viewport_width, height=viewport_height
@@ -187,10 +192,10 @@ class _ScrapeExecutorBase:
     async def _run_start_callback(self) -> None:
         pass
 
-    async def _run_end_callback(self) -> None:
-        pass
+    async def _run_end_callback(self) -> Optional[T]:
+        return None
 
-    async def run(self) -> None:
+    async def run(self) -> Optional[T]:
         """
         Runs the test until the high level goal is completed or it errors out
         """
@@ -229,12 +234,14 @@ class _ScrapeExecutorBase:
                 await context.close()
                 await browser.close()
 
-                await self._run_end_callback()
+                return_value = await self._run_end_callback()
 
         logger.info("Test %s completed", self.url)
         logger.info(
             "=============================================================="
         )
+
+        return return_value
 
 
 class ScrapeStepAiExecutor(_AiExecutorBase):
@@ -246,7 +253,7 @@ class ScrapeStepAiExecutor(_AiExecutorBase):
         variables: ScrapeVariables,
         files: ScrapeFiles,
         openai_api_key: str,
-        max_action_attempts: Optional[int] = 5,
+        max_action_attempts: int = 5,
         scrape_id: Optional[UUID] = None,
         step_id: Optional[UUID] = None,
         file_client: Optional[FileClient] = None,
@@ -276,7 +283,7 @@ class ScrapeStepAiExecutor(_AiExecutorBase):
             variables (ScrapeVariables): Variables to use in the scrape, e.g. for filling in a username and password to log in
             files (ScrapeFiles): Files to use in the scrape, e.g. for uploading some data as part of the goal
             openai_api_key (str): OpenAI API key, see https://platform.openai.com/api-keys
-            max_action_attempts (Optional[int], optional): Max actions to take on a single page. Defaults to 5.
+            max_action_attempts (int): Max actions to take on a single page. Set to 0 for no limit. Defaults to 5.
             scrape_id (Optional[UUID], optional): Scrape ID. Defaults to None.
             step_id (Optional[UUID], optional): Step ID. Defaults to None.
             file_client (Optional[FileClient], optional): File client to use for saving images, html, and traces. Defaults to None.
@@ -485,7 +492,7 @@ class ScrapeStepAiExecutor(_AiExecutorBase):
                     raise e
 
             if (
-                self.max_action_attempts is not None
+                self.max_action_attempts > 0
                 and self.actions_count >= self.max_action_attempts
             ):
                 logger.warning(
@@ -523,15 +530,15 @@ class ScrapeStepAiExecutor(_AiExecutorBase):
         return next_instruction, action, action_count
 
 
-class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
+class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase[ScrapeSpec]):
     def __init__(
         self,
         url: str,
         high_level_goal: str,
         openai_api_key: str,
-        max_page_views: Optional[int] = 10,
-        max_total_actions: Optional[int] = 20,
-        max_action_attempts_per_step: Optional[int] = 5,
+        max_page_views: int = 10,
+        max_total_actions: int = 20,
+        max_action_attempts_per_step: int = 5,
         viewport_width: int = 1280,
         viewport_height: int = 720,
         variables: Optional[ScrapeVariables] = None,
@@ -553,16 +560,16 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
                 high_level_goal="Find images of cats",
                 openai_api_key="...",
             )
-            await scrape_executor.run()
+            scrape_spec = await scrape_executor.run()
             ```
 
         Args:
             url (str): URL to test
             high_level_goal (str): High level goal to accomplish at the URL
             openai_api_key (str): OpenAI API key, see https://platform.openai.com/api-keys
-            max_page_views (Optional[int], optional): Max page views to take across the entire test. Defaults to 10.
-            max_total_actions (Optional[int], optional): Max total actions to take across the entire test. Defaults to 20.
-            max_action_attempts_per_step (Optional[int], optional): Max actions to take on a single page. Defaults to 5.
+            max_page_views (int): Max page views to take across the entire test. Set to 0 for no limit. Defaults to 10.
+            max_total_actions (int): Max total actions to take across the entire test. Set to 0 for no limit. Defaults to 20.
+            max_action_attempts_per_step (int): Max actions to take on a single page. Set to 0 for no limit Defaults to 5.
             viewport_width (int, optional): Viewport width in pixels. Defaults to 1280.
             viewport_height (int, optional): Viewport height in pixels. Defaults to 720.
             variables (Optional[ScrapeVariables], optional): Variables to use in the scrape, e.g. for filling in a username and password to log in. Defaults to None.
@@ -577,6 +584,7 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
         _ScrapeExecutorBase.__init__(
             self,
             url=url,
+            high_level_goal=high_level_goal,
             viewport_width=viewport_width,
             viewport_height=viewport_height,
             file_client=file_client,
@@ -585,7 +593,6 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
             headless=headless,
         )
         _AiExecutorBase.__init__(self, subscriptions=subscriptions)
-        self.high_level_goal = high_level_goal
         self._openai_api_key = openai_api_key
         self.max_page_views = max_page_views
         self.max_total_actions = max_total_actions
@@ -607,34 +614,24 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
         if self.http_client is None:
             self.http_client = httpx.AsyncClient()
 
-    async def _run_end_callback(self) -> None:
-        # save scrape spec
-        if self.file_client is not None:
-            spec = ScrapeSpec(
-                url=self.url,
-                scrape_events=self.scrape_events,
-                variables=self.variables,
-                files=self.files,
-                viewport_height=self.viewport["height"],
-                viewport_width=self.viewport["width"],
-            )
-            spec_save_path = await self.file_client.save_scrape_spec(
-                self.scrape_id, spec
-            )
-            logger.info(
-                "Saved scrape spec to %s",
-                spec_save_path,
-            )
-
-        # cleanup model client
-        if self.close_http_client and self.http_client is not None:
-            await self.http_client.aclose()
+    async def _run_end_callback(self) -> ScrapeSpec:
+        spec = ScrapeSpec(
+            original_scrape_id=self.scrape_id,
+            url=self.url,
+            high_level_goal=self.high_level_goal,
+            scrape_events=self.scrape_events,
+            variables=self.variables,
+            files=self.files,
+            viewport_height=self.viewport["height"],
+            viewport_width=self.viewport["width"],
+        )
+        return spec
 
     @property
-    def max_action_attempts(self) -> Optional[int]:
-        max_action_attempts = None
-        if self.max_action_attempts_per_step is not None:
-            if self.max_total_actions is not None:
+    def max_action_attempts(self) -> int:
+        max_action_attempts = 0
+        if self.max_action_attempts_per_step > 0:
+            if self.max_total_actions > 0:
                 max_action_attempts = min(
                     self.max_action_attempts_per_step,
                     self.max_total_actions - self.scrape_action_count,
@@ -712,7 +709,7 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
 
             # check if max total actions reached
             if (
-                self.max_total_actions is not None
+                self.max_total_actions > 0
                 and self.scrape_action_count >= self.max_total_actions
             ):
                 raise MaxTotalActionsReachedException(
@@ -721,7 +718,7 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
 
             # check if max page views reached
             if (
-                self.max_page_views is not None
+                self.max_page_views > 0
                 and self.scrape_page_view_count >= self.max_page_views
             ):
                 raise MaxPageViewsReachedException(
@@ -729,7 +726,7 @@ class ScrapeAiExecutor(_AiExecutorBase, _ScrapeExecutorBase):
                 )
 
 
-class ScrapeSpecExecutor(_ScrapeExecutorBase):
+class ScrapeSpecExecutor(_ScrapeExecutorBase[None]):
     def __init__(
         self,
         scrape_spec: ScrapeSpec,
@@ -744,10 +741,6 @@ class ScrapeSpecExecutor(_ScrapeExecutorBase):
         Examples:
             ```python
             from betatester import ScrapeSpecExecutor
-            from betatester.file.local import LocalFileClient
-
-            file_client = LocalFileClient("...")
-            scrape_spec = file_client.load_scrape_spec("/path/to/scrape_spec.json")
 
             scrape_spec_executor = ScrapeSpecExecutor(
                 scrape_spec=scrape_spec,
@@ -765,6 +758,7 @@ class ScrapeSpecExecutor(_ScrapeExecutorBase):
         _ScrapeExecutorBase.__init__(
             self,
             url=scrape_spec.url,
+            high_level_goal=scrape_spec.high_level_goal,
             viewport_width=scrape_spec.viewport_width,
             viewport_height=scrape_spec.viewport_height,
             file_client=file_client,
@@ -772,6 +766,7 @@ class ScrapeSpecExecutor(_ScrapeExecutorBase):
             save_playwright_trace=save_playwright_trace,
             headless=headless,
         )
+        self.original_scrape_id = scrape_spec.original_scrape_id
         self.scrape_events = scrape_spec.scrape_events
         self.variables = scrape_spec.variables
         self.files = scrape_spec.files
