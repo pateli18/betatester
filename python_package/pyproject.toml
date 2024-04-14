@@ -1,6 +1,6 @@
 [project]
 name = "betatester"
-version = "0.0.0"
+version = "0.0.1"
 authors = [
   { name="Ihsaan Patel" },
 ]
