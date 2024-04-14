@@ -3,6 +3,7 @@ import logging
 from typing import Optional, cast
 from uuid import UUID
 
+from betatester.betatester_types import ScrapeSpec
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import async_scoped_session
 
@@ -51,6 +52,7 @@ async def get_test_config(
 async def insert_test_event(
     test_config: TestConfig,
     db: async_scoped_session,
+    scrape_spec_id: Optional[UUID],
 ) -> UUID:
     event_raw = await db.execute(
         insert(TestEventsModel)
@@ -62,6 +64,7 @@ async def insert_test_event(
                 "action_count": 0,
                 "status": ScrapeStatus.running.value,
                 "event_history": [],
+                "scrape_spec_id": scrape_spec_id,
             }
         )
     )
@@ -72,10 +75,24 @@ async def insert_test_event(
 async def update_test_event(
     event: RunMessage | RunEventMetadata,
     db: async_scoped_session,
+    scrape_spec: Optional[ScrapeSpec] = None,
+    scrape_spec_id: Optional[UUID] = None,
 ) -> None:
     update_values = event.model_dump(
-        exclude={"steps", "id", "timestamp", "start_timestamp", "trace_url"}
+        exclude={
+            "steps",
+            "id",
+            "timestamp",
+            "start_timestamp",
+            "trace_url",
+            "using_scrape_spec",
+            "scrape_spec_failed",
+        }
     )
+    update_values["scrape_spec"] = (
+        None if scrape_spec is None else scrape_spec.model_dump()
+    )
+    update_values["scrape_spec_id"] = scrape_spec_id
     if isinstance(event, RunMessage):
         event_history_raw = event.model_dump_json(include={"steps"})
         event_history = json.loads(event_history_raw)
@@ -106,6 +123,8 @@ async def get_test_event_history(
             TestEventsModel.page_views,
             TestEventsModel.action_count,
             TestEventsModel.fail_reason,
+            TestEventsModel.scrape_spec,
+            TestEventsModel.scrape_spec_id,
         )
         .where(TestEventsModel.config_id == config_id)
         .order_by(TestEventsModel.updated_at.desc())
@@ -127,6 +146,9 @@ async def get_test_event_history(
                 page_views=cast(int, event.page_views),
                 action_count=cast(int, event.action_count),
                 fail_reason=cast(str, event.fail_reason),
+                using_scrape_spec=event.scrape_spec_id is not None,
+                scrape_spec_failed=event.scrape_spec is not None
+                and event.scrape_spec_id is None,
             )
         )
 
@@ -164,5 +186,27 @@ async def get_test_event(
             max_page_views=cast(int, event.max_page_views),
             max_total_actions=cast(int, event.max_total_actions),
             fail_reason=cast(str, event.fail_reason),
+            using_scrape_spec=event.scrape_spec_id is not None,
+            scrape_spec_failed=event.scrape_spec is not None
+            and event.scrape_spec_id is None,
         )
     return run_messsage
+
+
+async def get_latest_scrape_spec(
+    config_id: UUID, db: async_scoped_session
+) -> Optional[ScrapeSpec]:
+    scrape_spec_raw = await db.execute(
+        select(TestEventsModel.scrape_spec)
+        .where(TestEventsModel.config_id == config_id)
+        .where(TestEventsModel.scrape_spec.isnot(None))
+        .order_by(TestEventsModel.updated_at.desc())
+        .limit(1)
+    )
+    scrape_spec = scrape_spec_raw.scalars().one_or_none()
+
+    scrape_spec_output = None
+    if scrape_spec is not None:
+        scrape_spec_output = ScrapeSpec.model_validate(scrape_spec)
+
+    return scrape_spec_output

@@ -4,7 +4,11 @@ import { Layout } from "../components/Layout";
 import { getAllConfigs, getConfig, startScrape } from "../utils/apiCalls";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ExclamationTriangleIcon, PlusIcon } from "@radix-ui/react-icons";
+import {
+  ExclamationTriangleIcon,
+  InfoCircledIcon,
+  PlusIcon,
+} from "@radix-ui/react-icons";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -25,6 +29,12 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { ConfigInfo, DataLoading } from "../components/DisplayUtils";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const ConfigDrawer = (props: {
   drawerOpen: boolean;
@@ -138,6 +148,7 @@ export const HomeRoute = () => {
   const [dataLoading, setDataLoading] = useState(false);
   const [runLoading, setRunLoading] = useState(false);
   const [testEvents, setTestEvents] = useState<RunEventMetadata[]>([]);
+  const [useScrapeSpec, setUseScrapeSpec] = useState(true);
 
   useEffect(() => {
     getAllConfigs().then((data) => {
@@ -188,7 +199,7 @@ export const HomeRoute = () => {
   const handleRunClick = async () => {
     if (configId) {
       setRunLoading(true);
-      const response = await startScrape(configId!);
+      const response = await startScrape(configId!, useScrapeSpec);
       if (response === null) {
         toast.error("Failed to start test");
       } else {
@@ -229,6 +240,37 @@ export const HomeRoute = () => {
                 Run
               </Button>
             )}
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="use-scrape-spec"
+                checked={useScrapeSpec}
+                onCheckedChange={(checked) => {
+                  const value = typeof checked === "boolean" ? checked : true;
+                  setUseScrapeSpec(value);
+                }}
+              />
+              <label
+                htmlFor="use-scrape-spec"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Use Generated Test Spec
+              </label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <InfoCircledIcon className="h-4 w-4" />
+                </TooltipTrigger>
+                <TooltipContent className="w-[300px]">
+                  <p>
+                    A successful Ai test will automatically generate a
+                    deterministic test that can be run without having to pay for
+                    model inference on each test run. If the deterministic test
+                    fails, the Ai test runs and fixes any issues. If you don't
+                    want to run the deterministic test when one is available,
+                    uncheck the box.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
           <TabsContent value="history">
             {testEvents.length > 0 ? (

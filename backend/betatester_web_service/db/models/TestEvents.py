@@ -24,6 +24,8 @@ class TestEventsModel(Base, TimestampMixin, ScrapeParamsMixin):
     action_count = Column(Integer, nullable=False)
     fail_reason = Column(VARCHAR, nullable=True)
     event_history = Column(JSONB, nullable=False)
+    scrape_spec = Column(JSONB, nullable=True)
+    scrape_spec_id = Column(UUID(as_uuid=True), nullable=True)
 
     config = relationship(
         "ConfigModel",

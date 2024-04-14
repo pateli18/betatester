@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional, Union
 from uuid import UUID
 
 from betatester.betatester_types import (
@@ -20,13 +20,15 @@ from pydantic import BaseModel, validator
 from sqlalchemy.ext.asyncio import async_scoped_session
 from sse_starlette.sse import EventSourceResponse
 
-from betatester import ScrapeAiExecutor
+from betatester import ScrapeAiExecutor, ScrapeSpecExecutor
 from betatester_web_service.betatester_web_service_types import (
     RunEventMetadata,
     RunMessage,
     ScrapeStatus,
+    StartScraperRequest,
 )
 from betatester_web_service.db.api import (
+    get_latest_scrape_spec,
     get_test_config,
     get_test_event,
     insert_test_event,
@@ -51,56 +53,113 @@ router = APIRouter(
 )
 
 
-async def _run_scraper(scraper: ScrapeAiExecutor, config_id: UUID):
-    item_key = f"{config_id}-{scraper.scrape_id}"
+async def _scraper_setup(
+    scraper: Union[ScrapeAiExecutor, ScrapeSpecExecutor],
+    config_id: UUID,
+    item_key: str,
+    scrape_spec_failed: bool,
+) -> bool:
+    using_scrape_spec = isinstance(scraper, ScrapeSpecExecutor)
     async with scraper_info_cache_lock:
         scraper_info_cache[item_key] = RunMessage(
             id=scraper.scrape_id,
             url=scraper.url,
             high_level_goal=scraper.high_level_goal,
             status=ScrapeStatus.running,
-            max_page_views=scraper.max_page_views,
-            max_total_actions=scraper.max_total_actions,
+            max_page_views=(
+                0 if using_scrape_spec else scraper.max_page_views
+            ),
+            max_total_actions=(
+                0 if using_scrape_spec else scraper.max_total_actions
+            ),
             steps=[],
             config_id=config_id,
+            using_scrape_spec=using_scrape_spec or scrape_spec_failed,
+            scrape_spec_failed=scrape_spec_failed,
         )
 
     if scraper.scrape_id not in message_queues:
         message_queues[item_key] = asyncio.Queue()
 
     # subscribe to scraper
-    scraper.subscriptions = set([message_queues[item_key]])
+    if not using_scrape_spec:
+        scraper.subscriptions = set([message_queues[item_key]])
 
-    try:
-        await scraper.run()
-        scraper_info_cache[item_key].complete()
-    except Exception as e:
-        scraper_info_cache[item_key].fail(str(e))
-    message_queues[item_key].put_nowait(ExecutorMessage())
+    return using_scrape_spec
+
+
+async def _run_scraper(
+    scraper_ai: ScrapeAiExecutor,
+    scraper_spec: Optional[ScrapeSpecExecutor],
+    config_id: UUID,
+):
+    scraper = scraper_spec or scraper_ai
+    item_key = f"{config_id}-{scraper.scrape_id}"
+    scrape_spec = None
+    scrape_spec_failed = False
+    while True:
+        using_scrape_spec = await _scraper_setup(
+            scraper, config_id, item_key, scrape_spec_failed
+        )
+        try:
+            scrape_spec = await scraper.run()
+            scraper_info_cache[item_key].complete()
+        except Exception as e:
+            if using_scrape_spec:
+                logger.warning(
+                    "Falling back to Ai Scraper, scrape id %s error %s",
+                    scraper.scrape_id,
+                    str(e),
+                )
+                scraper = scraper_ai
+                scrape_spec_failed = True
+                continue
+            else:
+                scraper_info_cache[item_key].fail(str(e))
+        message_queues[item_key].put_nowait(ExecutorMessage())
+        break
 
     async with async_session_scope() as db:
-        await update_test_event(scraper_info_cache[item_key], db)
+        await update_test_event(
+            scraper_info_cache[item_key],
+            db,
+            scrape_spec,
+            None if scraper_spec is None else scraper_spec.original_scrape_id,
+        )
 
         await db.commit()
 
 
-@router.post("/start/{config_id}")
+@router.post("/start")
 async def run_scraper(
-    config_id: UUID, db: async_scoped_session = Depends(get_session)
+    request: StartScraperRequest,
+    db: async_scoped_session = Depends(get_session),
 ):
-    config = await get_test_config(config_id, db)
+    config = await get_test_config(request.config_id, db)
     if config is None:
         raise HTTPException(status_code=404, detail="Config not found")
 
-    test_event_id = await insert_test_event(config, db)
+    scrape_spec = None
+    if request.use_scrape_spec is True:
+        scrape_spec = await get_latest_scrape_spec(request.config_id, db)
 
-    scraper = config.scrape_executor(test_event_id, file_client)
-
-    task_manager.add_task(
-        f"{config_id}-{scraper.scrape_id}", _run_scraper, scraper, config_id
+    test_event_id = await insert_test_event(
+        config, db, scrape_spec.original_scrape_id if scrape_spec else None
     )
 
-    return {"scrape_id": scraper.scrape_id}
+    scraper_ai, scraper_scrape = config.scrape_executor(
+        test_event_id, file_client, scrape_spec
+    )
+
+    task_manager.add_task(
+        f"{request.config_id}-{scraper_ai.scrape_id}",
+        _run_scraper,
+        scraper_ai,
+        scraper_scrape,
+        request.config_id,
+    )
+
+    return {"scrape_id": scraper_ai.scrape_id}
 
 
 @router.post("/stop/{config_id}/{scrape_id}", status_code=204)

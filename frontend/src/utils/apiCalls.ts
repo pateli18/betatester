@@ -45,13 +45,16 @@ export const upsertConfig = async (
   return response;
 };
 
-export const startScrape = async (configId: string) => {
+export const startScrape = async (configId: string, useScrapeSpec: boolean) => {
   let response = null;
   try {
     response = await Ajax.req<{ scrape_id: string }>({
-      url: `/api/v1/scraper/start/${configId}`,
+      url: `/api/v1/scraper/start`,
       method: "POST",
-      body: {},
+      body: {
+        config_id: configId,
+        use_scrape_spec: useScrapeSpec,
+      },
     });
   } catch (e) {
     console.error(e);

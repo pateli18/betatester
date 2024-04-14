@@ -245,6 +245,17 @@ export const RunMessageView = (props: { runMessage: RunMessage }) => {
         high_level_goal={props.runMessage.high_level_goal}
       />
       <div className="flex items-center space-x-2">
+        {props.runMessage.using_scrape_spec && (
+          <Badge
+            variant={
+              props.runMessage.scrape_spec_failed ? "destructive" : "default"
+            }
+          >
+            {props.runMessage.scrape_spec_failed
+              ? "Spec failed, using Ai"
+              : "Using Spec"}
+          </Badge>
+        )}
         <StatusDisplay status={props.runMessage.status} />
         {props.runMessage.status === "running" && (
           <StopButton

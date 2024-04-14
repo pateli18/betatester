@@ -8,11 +8,12 @@ from betatester.betatester_types import (
     FileClient,
     ModelChat,
     ScrapeFiles,
+    ScrapeSpec,
     ScrapeVariables,
 )
 from pydantic import BaseModel, Field, computed_field
 
-from betatester import ScrapeAiExecutor
+from betatester import ScrapeAiExecutor, ScrapeSpecExecutor
 from betatester_web_service.utils import model_client, settings
 
 
@@ -33,9 +34,12 @@ class TestConfig(ConfigBase):
     config_id: UUID
 
     def scrape_executor(
-        self, scrape_id: UUID, file_client: FileClient
-    ) -> ScrapeAiExecutor:
-        return ScrapeAiExecutor(
+        self,
+        scrape_id: UUID,
+        file_client: FileClient,
+        scrape_spec: Optional[ScrapeSpec],
+    ) -> tuple[ScrapeAiExecutor, Optional[ScrapeSpecExecutor]]:
+        scraper_ai = ScrapeAiExecutor(
             scrape_id=scrape_id,
             url=self.url,
             high_level_goal=self.high_level_goal,
@@ -51,6 +55,16 @@ class TestConfig(ConfigBase):
             file_client=file_client,
             save_playwright_trace=True,
         )
+        scraper_spec = None
+        if scrape_spec is not None:
+            scraper_spec = ScrapeSpecExecutor(
+                scrape_spec=scrape_spec,
+                scrape_id=scrape_id,
+                file_client=file_client,
+                save_playwright_trace=True,
+            )
+
+        return scraper_ai, scraper_spec
 
 
 class UpsertConfig(ConfigBase):
@@ -128,9 +142,11 @@ class RunEventMetadata(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     page_views: int = 0
     action_count: int = 0
-    max_page_views: Optional[int]
-    max_total_actions: Optional[int]
+    max_page_views: int
+    max_total_actions: int
     fail_reason: Optional[str] = None
+    using_scrape_spec: bool
+    scrape_spec_failed: bool
 
     @computed_field
     @property
@@ -260,9 +276,16 @@ class RunMessage(RunEventMetadata):
             action_count=self.action_count,
             max_page_views=self.max_page_views,
             max_total_actions=self.max_total_actions,
+            using_scrape_spec=self.using_scrape_spec,
+            scrape_spec_failed=self.scrape_spec_failed,
         )
 
 
 class TestConfigResponse(BaseModel):
     history: list[RunEventMetadata]
     config: TestConfig
+
+
+class StartScraperRequest(BaseModel):
+    config_id: UUID
+    use_scrape_spec: bool = False

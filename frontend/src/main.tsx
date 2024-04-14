@@ -4,13 +4,14 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { HomeRoute } from "./routes/Home";
 import { TestEventRoute } from "./routes/TestEvent";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const container = document.getElementById("root");
 const root = createRoot(container!);
 
 const App = () => {
   return (
-    <>
+    <TooltipProvider>
       <BrowserRouter>
         <Routes>
           <Route
@@ -21,7 +22,7 @@ const App = () => {
         </Routes>
       </BrowserRouter>
       <Toaster />
-    </>
+    </TooltipProvider>
   );
 };
 

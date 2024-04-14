@@ -62,6 +62,8 @@ export interface RunEventMetadata {
   max_page_views: number;
   max_total_actions: number;
   trace_url: string;
+  using_scrape_spec: boolean;
+  scrape_spec_failed: boolean;
 }
 
 export interface RunMessage extends RunEventMetadata {
