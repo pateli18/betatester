@@ -221,7 +221,7 @@ print(response.json())
 
 ### File
 
-AutoTransform provides a file extension that allows you to store your files in the storage provider of your choice. To use the file extension, you will need to provide the following environment variables:
+BetaTester provides a file extension that allows you to store your files in the storage provider of your choice. To use the file extension, you will need to provide the following environment variables:
 
 - **FILE_CLIENT_TYPE**: The file client you are using, currently only `local` is supported
 - **FILE_CLIENT_CONFIG**: A string that contains the configuration for your file client. The format of this object is specific to the provider you are using.
