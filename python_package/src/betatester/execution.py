@@ -360,7 +360,7 @@ class ScrapeStepAiExecutor(_AiExecutorBase):
         )
 
         openai_chat_input = OpenAiChatInput(
-            model=ModelType.gpt4vision,
+            model=ModelType.gpt4turbo,
             messages=self.next_step_chat,
             stream=True,
             max_tokens=1000,

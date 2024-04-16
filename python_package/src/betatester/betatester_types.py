@@ -119,8 +119,7 @@ ToolChoice = Optional[Union[Literal["auto"], ToolChoiceObject]]
 
 
 class ModelType(str, Enum):
-    gpt4vision = "gpt-4-vision-preview"
-    gpt4turbo = "gpt-4-turbo-preview"
+    gpt4turbo = "gpt-4-turbo"
 
 
 class ModelFunction(BaseModel):
