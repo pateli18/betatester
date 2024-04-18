@@ -7,7 +7,6 @@ from uuid import UUID
 from betatester.betatester_types import (
     ExecutorMessage,
     ModelChat,
-    ModelChatContentType,
     ModelChatType,
     ModelType,
     OpenAiChatInput,
@@ -273,24 +272,10 @@ async def chat_endpoint(request: ChatRequest):
                     }
                 ) + "\n"
 
-    model = ModelType.gpt4turbo
-    max_tokens = None
-    stop = None
-    for message in request.chat:
-        if isinstance(message.content, list):
-            for item in message.content:
-                if item.type == ModelChatContentType.image_url:
-                    model = ModelType.gpt4vision
-                    max_tokens = 1000
-                    stop = "<<END>>"
-                    break
-
     chat_input = OpenAiChatInput(
         messages=request.chat,
         stream=True,
-        model=model,
-        max_tokens=max_tokens,
-        stop=stop,
+        model=ModelType.gpt4turbo,
     )
 
     return StreamingResponse(
