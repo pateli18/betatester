@@ -11,7 +11,7 @@ const root = createRoot(container!);
 
 const App = () => {
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={0}>
       <BrowserRouter>
         <Routes>
           <Route
