@@ -93,6 +93,7 @@ FILES:
 - For the element, you should provide the `role` and `name`. Only provide the `selector` if it is impossible to select the right element with the `name` and `role`. All values must appear in the provided html and resolve to only one element
 - For the action value, either return a relevant value from VARIABLES or FILES or provide a custom value
 - If there's a large discrepancy between the INSTRUCTION and the HTML, use the action_type `none` to indicate that the INSTRUCTION needs to be updated
+- DO NOT select an output that is already mentioned in the chat
 """
     return ModelChat(
         role=ModelChatType.system,
